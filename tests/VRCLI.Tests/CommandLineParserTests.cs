@@ -1,0 +1,630 @@
+using KibaLab.VRCLI;
+
+namespace VRCLI.Tests;
+
+public sealed class CommandLineParserTests
+{
+    [Fact]
+    public void ParsesConcisePlainDeployment()
+    {
+        Environment.SetEnvironmentVariable("VRCLI_USERNAME", "kibalab");
+        Environment.SetEnvironmentVariable("VRCLI_PASSWORD", "secret");
+        try
+        {
+            CommandLineParser parser = new();
+            ParseResult result = parser.Parse(
+            [
+                "deploy",
+                "--blueprint",
+                "wrld_example",
+                "--platform",
+                "Android",
+                "--plain",
+                "--yes"
+            ], TextReader.Null);
+
+            Assert.Null(result.Error);
+            Assert.Equal(Directory.GetCurrentDirectory(), result.Options?.ProjectPath);
+            Assert.Equal(VrcliPlatform.Android, result.Options?.Platform);
+            Assert.Equal(TerminalMode.Plain, result.Options?.TerminalMode);
+            Assert.True(result.Options?.AcceptContentOwnership);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VRCLI_USERNAME", null);
+            Environment.SetEnvironmentVariable("VRCLI_PASSWORD", null);
+        }
+    }
+
+    [Fact]
+    public void UsesConventionalEnvironmentAndWindowsDefault()
+    {
+        Environment.SetEnvironmentVariable("VRCLI_USERNAME", "kibalab");
+        Environment.SetEnvironmentVariable("VRCLI_PASSWORD", "secret");
+        Environment.SetEnvironmentVariable("VRCLI_BLUEPRINT_ID", "wrld_from_environment");
+        try
+        {
+            ParseResult result = new CommandLineParser().Parse(["deploy", "--plain"], TextReader.Null);
+
+            Assert.Null(result.Error);
+            Assert.Equal("wrld_from_environment", result.Options?.BlueprintId);
+            Assert.Equal(VrcliPlatform.StandaloneWindows64, result.Options?.Platform);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VRCLI_USERNAME", null);
+            Environment.SetEnvironmentVariable("VRCLI_PASSWORD", null);
+            Environment.SetEnvironmentVariable("VRCLI_BLUEPRINT_ID", null);
+        }
+    }
+
+    [Fact]
+    public void LoadsAConciseProjectConfiguration()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vrcli-config-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string config = Path.Combine(directory, "vrcli.json");
+        File.WriteAllText(config, """
+            {
+              "blueprint": "wrld_from_config",
+              "scene": "Assets/Scenes/Main.unity",
+              "platform": "Android",
+              "plain": true,
+              "yes": true
+            }
+            """);
+        Environment.SetEnvironmentVariable("VRCLI_USERNAME", "kibalab");
+        Environment.SetEnvironmentVariable("VRCLI_PASSWORD", "secret");
+        try
+        {
+            ParseResult result = new CommandLineParser().Parse(
+                ["deploy", "--config", config],
+                TextReader.Null);
+
+            Assert.Null(result.Error);
+            Assert.Equal(directory, result.Options?.ProjectPath);
+            Assert.Equal("wrld_from_config", result.Options?.BlueprintId);
+            Assert.Equal("Assets/Scenes/Main.unity", result.Options?.ScenePath);
+            Assert.Equal(VrcliPlatform.Android, result.Options?.Platform);
+            Assert.Equal(TerminalMode.Plain, result.Options?.TerminalMode);
+            Assert.True(result.Options?.AcceptContentOwnership);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VRCLI_USERNAME", null);
+            Environment.SetEnvironmentVariable("VRCLI_PASSWORD", null);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadsNewWorldFlagAndTitleFromConfiguration()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vrcli-new-config-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string config = Path.Combine(directory, "vrcli.json");
+        File.WriteAllText(config, """
+            {
+              "new": true,
+              "title": "Configured World",
+              "thumbnail": "thumbnail.png"
+            }
+            """);
+        Environment.SetEnvironmentVariable("VRCLI_USERNAME", "kibalab");
+        Environment.SetEnvironmentVariable("VRCLI_PASSWORD", "secret");
+        try
+        {
+            ParseResult result = new CommandLineParser().Parse(["deploy", "--config", config], TextReader.Null);
+
+            Assert.Null(result.Error);
+            Assert.True(result.Options?.CreateWorld);
+            Assert.Equal("Configured World", result.Options?.WorldName);
+            Assert.Equal(Path.Combine(directory, "thumbnail.png"), result.Options?.ThumbnailPath);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VRCLI_USERNAME", null);
+            Environment.SetEnvironmentVariable("VRCLI_PASSWORD", null);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RejectsUnknownOrSecretConfigurationKeys()
+    {
+        string config = Path.Combine(Path.GetTempPath(), "vrcli-invalid-config-" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(config, "{ \"blueprint\": \"wrld_example\", \"password\": \"must-not-live-here\" }");
+        try
+        {
+            ParseResult result = new CommandLineParser().Parse(
+                ["deploy", "--config", config, "--login", "kibalab", "--password", "secret"],
+                TextReader.Null);
+
+            Assert.Contains("could not be mapped", result.Error, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            File.Delete(config);
+        }
+    }
+
+    [Fact]
+    public void NewFlagUsesTitleMetadata()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(
+        [
+            "deploy",
+            "--new",
+            "--title",
+            "My World",
+            "--thumbnail",
+            "thumbnail.png",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret",
+            "--plain"
+        ], TextReader.Null);
+
+        Assert.Null(result.Error);
+        Assert.True(result.Options?.CreateWorld);
+        Assert.Equal("My World", result.Options?.WorldName);
+        Assert.Equal(VrcliPlatform.StandaloneWindows64, result.Options?.Platform);
+    }
+
+    [Fact]
+    public void ParsesRequestedCommandShape()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "--project", ".",
+            "--scene", "Assets/Scenes/Main.unity",
+            "--blueprint", "wrld_example",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "StandaloneWindows64"
+        }, TextReader.Null);
+
+        Assert.Null(result.Error);
+        Assert.NotNull(result.Options);
+        Assert.Equal("kibalab", result.Options.Username);
+        Assert.Equal(VrcliPlatform.StandaloneWindows64, result.Options.Platform);
+    }
+
+    [Fact]
+    public void RejectsRemovedIdAlias()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "deploy",
+            "--project", ".",
+            "--blueprint", "wrld_example",
+            "--id", "kibalab",
+            "--password", "1234",
+            "--platform", "Android"
+        }, TextReader.Null);
+
+        Assert.Contains("Unknown option", result.Error);
+    }
+
+    [Fact]
+    public void ParsesPlainTerminalMode()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "--project", ".",
+            "--blueprint", "wrld_example",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "Android",
+            "--plain"
+        }, TextReader.Null);
+
+        Assert.Null(result.Error);
+        Assert.Equal(TerminalMode.Plain, result.Options?.TerminalMode);
+    }
+
+    [Fact]
+    public void InteractiveTwoFactorIgnoresDefaultTotpEnvironment()
+    {
+        Environment.SetEnvironmentVariable("VRCLI_TOTP_SECRET", "SHOULD_NOT_BE_USED");
+        try
+        {
+            CommandLineParser parser = new();
+            ParseResult result = parser.Parse(new[]
+            {
+                "--project", ".",
+                "--blueprint", "wrld_example",
+                "--login", "kibalab",
+                "--password", "1234",
+                "--platform", "Android",
+                "--interactive-two-factor",
+                "--tui"
+            }, TextReader.Null);
+
+            Assert.Null(result.Error);
+            Assert.True(result.Options?.InteractiveTwoFactor);
+            Assert.Null(result.Options?.TotpSecret);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VRCLI_TOTP_SECRET", null);
+        }
+    }
+
+    [Fact]
+    public void ExplicitCurrentCodeOverridesDefaultTotpEnvironment()
+    {
+        Environment.SetEnvironmentVariable("VRCLI_TOTP_SECRET", "DEFAULT_TOTP_SECRET");
+        try
+        {
+            CommandLineParser parser = new();
+            ParseResult result = parser.Parse(new[]
+            {
+                "--project", ".",
+                "--blueprint", "wrld_example",
+                "--login", "kibalab",
+                "--password", "1234",
+                "--platform", "Android",
+                "--two-factor-code", "123456"
+            }, TextReader.Null);
+
+            Assert.Null(result.Error);
+            Assert.Equal("123456", result.Options?.TwoFactorCode);
+            Assert.Null(result.Options?.TotpSecret);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VRCLI_TOTP_SECRET", null);
+        }
+    }
+
+    [Fact]
+    public void RejectsRemovedNoTuiAlias()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "--project", ".",
+            "--blueprint", "wrld_example",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "Android",
+            "--no-tui"
+        }, TextReader.Null);
+
+        Assert.Contains("Unknown option", result.Error);
+    }
+
+    [Fact]
+    public void RejectsNonWorldBlueprint()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "--project", ".",
+            "--blueprint", "avtr_example",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "Android"
+        }, TextReader.Null);
+
+        Assert.Contains("wrld_", result.Error);
+    }
+
+    [Fact]
+    public void RejectsRemovedPasswordStdinOption()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "--project", ".",
+            "--blueprint", "wrld_example",
+            "--login", "kibalab",
+            "--password-stdin",
+            "--platform", "Android"
+        }, new StringReader("secret-from-stdin\n"));
+
+        Assert.Contains("Unknown option", result.Error);
+    }
+
+    [Fact]
+    public void ReadsTotpSecretFromFixedEnvironmentVariable()
+    {
+        const string variable = "VRCLI_TOTP_SECRET";
+        Environment.SetEnvironmentVariable(variable, "JBSWY3DPEHPK3PXP");
+        try
+        {
+            CommandLineParser parser = new();
+            ParseResult result = parser.Parse(new[]
+            {
+                "--project", ".",
+                "--blueprint", "wrld_example",
+                "--login", "kibalab",
+                "--password", "1234",
+                "--platform", "Android"
+            }, TextReader.Null);
+
+            Assert.Null(result.Error);
+            Assert.Equal("JBSWY3DPEHPK3PXP", result.Options?.TotpSecret);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+        }
+    }
+
+    [Fact]
+    public void ParsesNewWorldOptionsAndAllocatesBlueprint()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "deploy",
+            "--project", ".",
+            "--new",
+            "--title", "My New World",
+            "--description", "A description",
+            "--thumbnail", "thumbnail.png",
+            "--capacity", "48",
+            "--recommended-capacity", "24",
+            "--tag", "author_tag_social",
+            "--tag", "content_other",
+            "--blueprint-output", "blueprint.txt",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "StandaloneWindows64"
+        }, TextReader.Null);
+
+        Assert.Null(result.Error);
+        Assert.NotNull(result.Options);
+        Assert.True(result.Options.CreateWorld);
+        Assert.StartsWith("wrld_", result.Options.BlueprintId);
+        Assert.Equal("My New World", result.Options.WorldName);
+        Assert.Equal(48, result.Options.Capacity);
+        Assert.Equal(24, result.Options.RecommendedCapacity);
+        Assert.Equal(new[] { "author_tag_social", "content_other" }, result.Options.Tags);
+        Assert.NotNull(result.Options.ThumbnailPath);
+        Assert.NotNull(result.Options.BlueprintOutputPath);
+        Assert.True(Path.IsPathFullyQualified(result.Options.ThumbnailPath!));
+        Assert.True(Path.IsPathFullyQualified(result.Options.BlueprintOutputPath!));
+    }
+
+    [Fact]
+    public void PreservesNewWorldBlueprintDuringAuthenticationRetry()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "deploy",
+            "--project", ".",
+            "--new",
+            "--title", "My New World",
+            "--thumbnail", "thumbnail.png",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "StandaloneWindows64"
+        }, TextReader.Null, "wrld_preserved_for_retry");
+
+        Assert.Null(result.Error);
+        Assert.Equal("wrld_preserved_for_retry", result.Options?.BlueprintId);
+    }
+
+    [Fact]
+    public void RejectsBlueprintTogetherWithNew()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "--project", ".",
+            "--new",
+            "--blueprint", "wrld_example",
+            "--title", "My World",
+            "--thumbnail", "thumbnail.png",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "Android"
+        }, TextReader.Null);
+
+        Assert.Contains("Choose one target", result.Error);
+    }
+
+    [Fact]
+    public void RequiresTitleAndThumbnailForNewWorld()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "--project", ".",
+            "--new",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "Android"
+        }, TextReader.Null);
+
+        Assert.Contains("--title", result.Error);
+        Assert.Contains("--thumbnail", result.Error);
+    }
+
+    [Fact]
+    public void RejectsRecommendedCapacityAboveMaximum()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "--project", ".",
+            "--new",
+            "--title", "My World",
+            "--thumbnail", "thumbnail.png",
+            "--capacity", "10",
+            "--recommended-capacity", "11",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "Android"
+        }, TextReader.Null);
+
+        Assert.Contains("--capacity", result.Error);
+    }
+
+    [Fact]
+    public void ParsesMetadataUpdatesForExistingWorld()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "--project", ".",
+            "--blueprint", "wrld_example",
+            "--title", "Updated World",
+            "--description", "Updated description",
+            "--thumbnail", "updated-thumbnail.png",
+            "--capacity", "40",
+            "--recommended-capacity", "20",
+            "--tag", "author_tag_social",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "Android"
+        }, TextReader.Null);
+
+        Assert.Null(result.Error);
+        Assert.NotNull(result.Options);
+        Assert.False(result.Options.CreateWorld);
+        Assert.Equal("Updated World", result.Options.WorldName);
+        Assert.Equal("Updated description", result.Options.WorldDescription);
+        Assert.NotNull(result.Options.ThumbnailPath);
+        Assert.Equal(40, result.Options.Capacity);
+        Assert.Equal(20, result.Options.RecommendedCapacity);
+        Assert.True(result.Options.CapacitySpecified);
+        Assert.True(result.Options.RecommendedCapacitySpecified);
+        Assert.True(result.Options.TagsSpecified);
+        Assert.Equal(["author_tag_social"], result.Options.Tags);
+    }
+
+    [Fact]
+    public void LeavesExistingWorldMetadataUnchangedWhenNotSpecified()
+    {
+        ParseResult result = new CommandLineParser().Parse(new[]
+        {
+            "--blueprint", "wrld_example",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "StandaloneWindows64"
+        }, TextReader.Null);
+
+        Assert.Null(result.Error);
+        Assert.Null(result.Options?.WorldName);
+        Assert.Null(result.Options?.WorldDescription);
+        Assert.False(result.Options?.CapacitySpecified);
+        Assert.False(result.Options?.RecommendedCapacitySpecified);
+        Assert.False(result.Options?.TagsSpecified);
+    }
+
+    [Fact]
+    public void AcceptsRecommendedCapacityWithoutChangingMaximumCapacity()
+    {
+        ParseResult result = new CommandLineParser().Parse(new[]
+        {
+            "--blueprint", "wrld_example",
+            "--recommended-capacity", "64",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "Android"
+        }, TextReader.Null);
+
+        Assert.Null(result.Error);
+        Assert.False(result.Options?.CapacitySpecified);
+        Assert.True(result.Options?.RecommendedCapacitySpecified);
+        Assert.Equal(64, result.Options?.RecommendedCapacity);
+    }
+
+    [Fact]
+    public void LoginAndPasswordCanBeProvidedTogether()
+    {
+        ParseResult result = new CommandLineParser().Parse(new[]
+        {
+            "--blueprint", "wrld_example",
+            "--login", "user@example.com",
+            "--password", "secret",
+            "--platform", "StandaloneWindows64"
+        }, TextReader.Null);
+
+        Assert.Null(result.Error);
+        Assert.Equal("user@example.com", result.Options?.Username);
+        Assert.Equal("secret", result.Options?.Password);
+    }
+
+    [Fact]
+    public void RejectsANamePlacedDirectlyAfterNewFlag()
+    {
+        ParseResult result = new CommandLineParser().Parse(new[]
+        {
+            "--new", "My World",
+            "--thumbnail", "thumbnail.png",
+            "--login", "kibalab",
+            "--password", "1234"
+        }, TextReader.Null);
+
+        Assert.Contains("--title", result.Error);
+    }
+
+    [Theory]
+    [InlineData("--path")]
+    [InlineData("--world")]
+    [InlineData("--create")]
+    [InlineData("--name")]
+    [InlineData("--username")]
+    [InlineData("--id")]
+    [InlineData("--no-tui")]
+    [InlineData("--accept-content-ownership")]
+    [InlineData("--password-env")]
+    [InlineData("--password-stdin")]
+    [InlineData("--two-factor-code-env")]
+    [InlineData("--totp-secret-env")]
+    public void RejectsRemovedCompatibilityOptions(string option)
+    {
+        ParseResult result = new CommandLineParser().Parse(["deploy", option], TextReader.Null);
+
+        Assert.Equal($"Unknown option: {option}", result.Error);
+    }
+
+    [Theory]
+    [InlineData("windows")]
+    [InlineData("win")]
+    [InlineData("pc")]
+    [InlineData("quest")]
+    public void RejectsRemovedPlatformAliases(string platform)
+    {
+        ParseResult result = new CommandLineParser().Parse(new[]
+        {
+            "--blueprint", "wrld_example",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", platform
+        }, TextReader.Null);
+
+        Assert.Contains("StandaloneWindows64 or Android", result.Error);
+    }
+
+    [Fact]
+    public void AcceptsCapacityAboveEighty()
+    {
+        ParseResult result = new CommandLineParser().Parse(new[]
+        {
+            "--new",
+            "--title", "Large World",
+            "--thumbnail", "thumbnail.png",
+            "--capacity", "256",
+            "--recommended-capacity", "128",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--platform", "StandaloneWindows64"
+        }, TextReader.Null);
+
+        Assert.Null(result.Error);
+        Assert.Equal(256, result.Options?.Capacity);
+        Assert.Equal(128, result.Options?.RecommendedCapacity);
+    }
+}

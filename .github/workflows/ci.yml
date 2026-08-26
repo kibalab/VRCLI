@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.x
+      - run: dotnet test VRCLI.sln --configuration Release
+      - run: dotnet publish src/VRCLI/VRCLI.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/win-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VRCLI-win-x64
+          path: artifacts/win-x64

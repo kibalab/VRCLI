@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>VRCLI</AssemblyName>
+    <RootNamespace>KibaLab.VRCLI</RootNamespace>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\Packages\com.kibalab.vrcli\Editor\VrcliTotpGenerator.cs"
+             Link="VrcliTotpGenerator.cs" />
+    <Content Include="..\..\Packages\com.kibalab.vrcli\**\*"
+             Exclude="..\..\Packages\com.kibalab.vrcli\**\*.md;..\..\Packages\com.kibalab.vrcli\**\*.md.meta"
+             Link="UnityBridge\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\LICENSE"
+             Link="LICENSE"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

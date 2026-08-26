@@ -1,0 +1,21 @@
+{
+  "name": "KibaLab.VRCLI.Editor",
+  "rootNamespace": "KibaLab.VRCLI.Editor",
+  "references": [
+    "VRC.SDKBase",
+    "VRC.SDKBase.Editor",
+    "VRC.SDK3.Editor",
+    "Newtonsoft.Json"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
