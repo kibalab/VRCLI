@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 public static class UnityProjectConfigurator
 {
@@ -8,7 +8,7 @@ public static class UnityProjectConfigurator
 
     public static UnityProjectConfigurationResult EnsureVrchatWorldSdkDefines(
         string projectPath,
-        VrcliPlatform platform)
+        BuildPlatform platform)
     {
         EnsureWorldSdkEditorAssemblyExists(projectPath);
 
@@ -36,7 +36,7 @@ public static class UnityProjectConfigurator
                 "Unable to locate scriptingDefineSymbols in ProjectSettings/ProjectSettings.asset.");
         }
 
-        string target = platform == VrcliPlatform.Android ? "Android" : "Standalone";
+        string target = platform == BuildPlatform.Android ? "Android" : "Standalone";
         string targetPrefix = "    " + target + ":";
         int nextSection = FindNextSection(lines, defineLine + 1);
         int targetLine = -1;

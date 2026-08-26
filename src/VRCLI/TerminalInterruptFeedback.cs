@@ -1,4 +1,4 @@
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 internal static class TerminalInterruptFeedback
 {

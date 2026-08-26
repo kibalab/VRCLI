@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text.Json;
 
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 public sealed class InteractiveTwoFactorServer : IAsyncDisposable
 {

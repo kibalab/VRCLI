@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 internal sealed class WizardTerminalScreen : IDisposable
 {

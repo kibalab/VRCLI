@@ -2,10 +2,10 @@ using System;
 using System.IO;
 using UnityEngine;
 
-namespace KibaLab.VRCLI.Editor
+namespace KibaLab.WorldDeployment.Editor
 {
     [Serializable]
-    internal sealed class VrcliResult
+    internal sealed class DeploymentResult
     {
         public bool Success;
         public int ExitCode;
@@ -17,7 +17,7 @@ namespace KibaLab.VRCLI.Editor
 
         public static void Write(string resultFile, bool success, int exitCode, string worldId, bool created, string platform, string stage, string message)
         {
-            VrcliResult result = new VrcliResult
+            DeploymentResult result = new DeploymentResult
             {
                 Success = success,
                 ExitCode = exitCode,

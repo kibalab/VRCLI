@@ -15,17 +15,17 @@ using VRC.SDKBase.Editor;
 using VRC.SDKBase.Editor.Api;
 using Object = UnityEngine.Object;
 
-namespace KibaLab.VRCLI.Editor
+namespace KibaLab.WorldDeployment.Editor
 {
-    internal static class VrcliWorldDeployer
+    internal static class WorldDeployer
     {
         private static string lastUploadStatus;
         private static int lastUploadBucket = -1;
         private static bool uploadIncludesThumbnail;
 
-        public static async Task<string> DeployAsync(VrcliRequest request, string scenePath)
+        public static async Task<string> DeployAsync(DeploymentRequest request, string scenePath)
         {
-            VrcliLog.Phase("PREPARE", "Preparing project and scene for the VRChat SDK builder.");
+            DeploymentLog.Phase("PREPARE", "Preparing project and scene for the VRChat SDK builder.");
             ValidateActivePlatform(request.Platform);
             EnsureVrchatProjectSettings();
             OpenScene(scenePath);
@@ -36,13 +36,13 @@ namespace KibaLab.VRCLI.Editor
             PipelineManager pipeline = descriptor.GetComponent<PipelineManager>();
             if (pipeline == null) pipeline = Object.FindObjectOfType<PipelineManager>();
             if (pipeline == null) throw new InvalidOperationException("PipelineManager was not found in the selected scene.");
-            VrcliLog.Info("PREPARE", "VRC_SceneDescriptor and PipelineManager were found.");
+            DeploymentLog.Info("PREPARE", "VRC_SceneDescriptor and PipelineManager were found.");
 
             // Let the SDK panel initialize in its new-world state. Giving it a not-yet-created
             // ID during initialization makes its background lookup treat the ID as invalid and clear it.
-            pipeline.blueprintId = request.CreateWorld ? string.Empty : request.BlueprintId;
+            pipeline.blueprintId = request.IsNew ? string.Empty : request.BlueprintId;
             VRCWorld world;
-            if (request.CreateWorld)
+            if (request.IsNew)
             {
                 if (!File.Exists(request.ThumbnailPath))
                 {
@@ -51,59 +51,59 @@ namespace KibaLab.VRCLI.Editor
 
                 world = new VRCWorld
                 {
-                    Name = request.WorldName,
-                    Description = request.WorldDescription,
+                    Name = request.Title,
+                    Description = request.Description,
                     Capacity = request.Capacity,
                     RecommendedCapacity = request.RecommendedCapacity,
                     Tags = new List<string>(request.Tags)
                 };
-                VrcliLog.Phase("WORLD", "Prepared new private world metadata.");
-                VrcliLog.Info("WORLD", "Name: " + world.Name);
-                VrcliLog.Info("WORLD", "Capacity: " + world.RecommendedCapacity + " recommended / " + world.Capacity + " maximum");
-                VrcliLog.Info("WORLD", "Tags: " + (world.Tags.Count == 0 ? "none" : string.Join(", ", world.Tags)));
-                VrcliLog.Info("WORLD", "Thumbnail: " + request.ThumbnailPath + " (" + VrcliLog.FormatBytes(new FileInfo(request.ThumbnailPath).Length) + ")");
+                DeploymentLog.Phase("WORLD", "Prepared new private world metadata.");
+                DeploymentLog.Info("WORLD", "Name: " + world.Name);
+                DeploymentLog.Info("WORLD", "Capacity: " + world.RecommendedCapacity + " recommended / " + world.Capacity + " maximum");
+                DeploymentLog.Info("WORLD", "Tags: " + (world.Tags.Count == 0 ? "none" : string.Join(", ", world.Tags)));
+                DeploymentLog.Info("WORLD", "Thumbnail: " + request.ThumbnailPath + " (" + DeploymentLog.FormatBytes(new FileInfo(request.ThumbnailPath).Length) + ")");
             }
             else
             {
-                VrcliLog.Phase("WORLD", "Fetching the existing VRChat world record.");
+                DeploymentLog.Phase("WORLD", "Fetching the existing VRChat world record.");
                 world = await VRCApi.GetWorld(request.BlueprintId, true);
                 if (string.IsNullOrWhiteSpace(world.ID)) throw new InvalidOperationException("VRChat did not return world data for " + request.BlueprintId + ".");
                 if (APIUser.CurrentUser == null || world.AuthorId != APIUser.CurrentUser.id)
                 {
-                    throw new VrcliOwnershipException("The logged-in account does not own " + request.BlueprintId + ".");
+                    throw new ContentOwnershipException("The logged-in account does not own " + request.BlueprintId + ".");
                 }
                 ApplyExistingWorldMetadata(ref world, request);
-                VrcliLog.Info("WORLD", "World: " + world.Name + " (version " + world.Version + ")");
-                VrcliLog.Info("WORLD", "Release status: " + world.ReleaseStatus);
-                VrcliLog.Info("WORLD", "Capacity: " + world.RecommendedCapacity + " recommended / " + world.Capacity + " maximum");
-                VrcliLog.Info("WORLD", "Ownership confirmed for the authenticated account.");
-                VrcliLog.Info("WORLD", "Existing " + request.Platform + " bundle: " +
+                DeploymentLog.Info("WORLD", "World: " + world.Name + " (version " + world.Version + ")");
+                DeploymentLog.Info("WORLD", "Release status: " + world.ReleaseStatus);
+                DeploymentLog.Info("WORLD", "Capacity: " + world.RecommendedCapacity + " recommended / " + world.Capacity + " maximum");
+                DeploymentLog.Info("WORLD", "Ownership confirmed for the authenticated account.");
+                DeploymentLog.Info("WORLD", "Existing " + request.Platform + " bundle: " +
                     (string.IsNullOrWhiteSpace(world.GetLatestAssetUrlForPlatform(VRC.Tools.Platform)) ? "not present; a platform bundle will be added" : "present; a new file version will be uploaded"));
             }
 
-            VrcliLog.Phase("SDK", "Initializing the VRChat world builder.");
+            DeploymentLog.Phase("SDK", "Initializing the VRChat world builder.");
             IVRCSdkWorldBuilderApi builder = await GetBuilderAsync();
-            VrcliLog.Info("SDK", "VRChat world builder is ready.");
+            DeploymentLog.Info("SDK", "VRChat world builder is ready.");
             pipeline.blueprintId = request.BlueprintId;
-            if (request.CreateWorld)
+            if (request.IsNew)
             {
                 SynchronizeBuilderBlueprint(builder, request.BlueprintId);
-                await VrcliOwnershipAgreement.AcceptForNewContentAsync(request.BlueprintId, request.AcceptContentOwnership);
+                await OwnershipAgreement.AcceptForNewContentAsync(request.BlueprintId, request.OwnershipAccepted);
             }
             else
             {
-                await VrcliOwnershipAgreement.EnsureAsync(request.BlueprintId, request.AcceptContentOwnership);
+                await OwnershipAgreement.EnsureAsync(request.BlueprintId, request.OwnershipAccepted);
             }
             EventHandler<string> buildProgress = OnBuildProgress;
             EventHandler<string> buildSuccess = (sender, path) =>
-                VrcliLog.Info("BUILD", "SDK produced build artifact: " + path);
+                DeploymentLog.Info("BUILD", "SDK produced build artifact: " + path);
             builder.OnSdkBuildProgress += buildProgress;
             builder.OnSdkBuildSuccess += buildSuccess;
             (string path, string signature) build;
             try
             {
-                VrcliLog.Phase("BUILD", "Starting SDK validation and world asset-bundle build for " + request.Platform + ".");
-                VrcliLog.Info("SIGNATURE", "The SDK will generate a fresh signature for this bundle.");
+                DeploymentLog.Phase("BUILD", "Starting SDK validation and world asset-bundle build for " + request.Platform + ".");
+                DeploymentLog.Info("SIGNATURE", "The SDK will generate a fresh signature for this bundle.");
                 build = await builder.BuildWithSignature();
             }
             finally
@@ -119,26 +119,26 @@ namespace KibaLab.VRCLI.Editor
             }
 
             FileInfo bundle = new FileInfo(build.path);
-            VrcliLog.Info("BUILD", "Bundle ready: " + build.path);
-            VrcliLog.Info("BUILD", "Bundle size: " + VrcliLog.FormatBytes(bundle.Length));
-            VrcliLog.Info("SIGNATURE", "Fresh bundle signature generated successfully (" + build.signature.Length + " characters; value hidden).");
+            DeploymentLog.Info("BUILD", "Bundle ready: " + build.path);
+            DeploymentLog.Info("BUILD", "Bundle size: " + DeploymentLog.FormatBytes(bundle.Length));
+            DeploymentLog.Info("SIGNATURE", "Fresh bundle signature generated successfully (" + build.signature.Length + " characters; value hidden).");
 
             world.UdonProducts = descriptor.udonProducts;
-            ResetUploadProgress(request.CreateWorld);
-            VrcliLog.Phase("UPLOAD", request.CreateWorld
+            ResetUploadProgress(request.IsNew);
+            DeploymentLog.Phase("UPLOAD", request.IsNew
                 ? "Starting bundle, thumbnail, signature, and metadata upload for a new world."
-                : request.HasWorldInfoUpdate || request.UpdateThumbnail
+                : request.HasMetadataUpdate || request.UpdateThumbnail
                     ? "Starting platform bundle, signature, and requested metadata update for the existing world."
                     : "Starting platform bundle and refreshed-signature upload for the existing world.");
-            VrcliLog.Info("UPLOAD", "Target platform: " + request.Platform);
-            VrcliLog.Info("UPLOAD", "Bundle payload: " + VrcliLog.FormatBytes(bundle.Length));
-            if (request.CreateWorld)
-                VrcliLog.Info("UPLOAD", "Thumbnail payload: " + VrcliLog.FormatBytes(new FileInfo(request.ThumbnailPath).Length));
-            VrcliLog.Info("SIGNATURE", request.CreateWorld
+            DeploymentLog.Info("UPLOAD", "Target platform: " + request.Platform);
+            DeploymentLog.Info("UPLOAD", "Bundle payload: " + DeploymentLog.FormatBytes(bundle.Length));
+            if (request.IsNew)
+                DeploymentLog.Info("UPLOAD", "Thumbnail payload: " + DeploymentLog.FormatBytes(new FileInfo(request.ThumbnailPath).Length));
+            DeploymentLog.Info("SIGNATURE", request.IsNew
                 ? "The generated signature will be stored with the new world record."
                 : "The world record will be updated with the generated signature after bundle upload.");
             VRCWorld uploaded;
-            if (request.CreateWorld)
+            if (request.IsNew)
             {
                 uploaded = await VRCApi.CreateNewWorld(
                     request.BlueprintId,
@@ -157,57 +157,57 @@ namespace KibaLab.VRCLI.Editor
                     build.signature,
                     OnApiUploadProgress);
 
-                if (request.HasWorldInfoUpdate)
+                if (request.HasMetadataUpdate)
                 {
-                    VrcliLog.Info("UPLOAD", "Saving requested world metadata fields.");
+                    DeploymentLog.Info("UPLOAD", "Saving requested world metadata fields.");
                     uploaded = await VRCApi.UpdateWorldInfo(request.BlueprintId, world);
-                    VrcliLog.Info("UPLOAD", "World metadata update completed.");
+                    DeploymentLog.Info("UPLOAD", "World metadata update completed.");
                 }
 
                 if (request.UpdateThumbnail)
                 {
                     ResetUploadProgress(false);
-                    VrcliLog.Info("UPLOAD", "Uploading replacement thumbnail: " + request.ThumbnailPath +
-                        " (" + VrcliLog.FormatBytes(new FileInfo(request.ThumbnailPath).Length) + ")");
+                    DeploymentLog.Info("UPLOAD", "Uploading replacement thumbnail: " + request.ThumbnailPath +
+                        " (" + DeploymentLog.FormatBytes(new FileInfo(request.ThumbnailPath).Length) + ")");
                     uploaded = await VRCApi.UpdateWorldImage(
                         request.BlueprintId,
                         uploaded,
                         request.ThumbnailPath,
                         OnApiUploadProgress);
-                    VrcliLog.Info("UPLOAD", "Thumbnail update completed.");
+                    DeploymentLog.Info("UPLOAD", "Thumbnail update completed.");
                 }
             }
 
             if (string.IsNullOrWhiteSpace(uploaded.ID))
                 throw new UploadException("VRChat did not return the uploaded world record.");
-            VrcliLog.Info("UPLOAD", request.CreateWorld
+            DeploymentLog.Info("UPLOAD", request.IsNew
                 ? "Bundle and thumbnail uploads completed; the new world record was created."
                 : "Bundle upload completed; the platform asset reference was updated.");
-            VrcliLog.Info("SIGNATURE", "VRChat confirmed the world-signature update.");
-            VrcliLog.Info("UPLOAD", "Server world version: " + uploaded.Version);
-            VrcliLog.Info("UPLOAD", "Server updated time: " + uploaded.UpdatedAt.ToUniversalTime().ToString("O"));
+            DeploymentLog.Info("SIGNATURE", "VRChat confirmed the world-signature update.");
+            DeploymentLog.Info("UPLOAD", "Server world version: " + uploaded.Version);
+            DeploymentLog.Info("UPLOAD", "Server updated time: " + uploaded.UpdatedAt.ToUniversalTime().ToString("O"));
             return uploaded.ID;
         }
 
-        private static void ApplyExistingWorldMetadata(ref VRCWorld world, VrcliRequest request)
+        private static void ApplyExistingWorldMetadata(ref VRCWorld world, DeploymentRequest request)
         {
             if (request.UpdateThumbnail && !File.Exists(request.ThumbnailPath))
                 throw new FileNotFoundException("Replacement thumbnail was not found.", request.ThumbnailPath);
 
-            if (request.UpdateWorldName)
+            if (request.UpdateTitle)
             {
-                world.Name = request.WorldName;
-                VrcliLog.Info("WORLD", "Requested name update: " + world.Name);
+                world.Name = request.Title;
+                DeploymentLog.Info("WORLD", "Requested name update: " + world.Name);
             }
-            if (request.UpdateWorldDescription)
+            if (request.UpdateDescription)
             {
-                world.Description = request.WorldDescription ?? string.Empty;
-                VrcliLog.Info("WORLD", "Requested description update (" + world.Description.Length + " characters).");
+                world.Description = request.Description ?? string.Empty;
+                DeploymentLog.Info("WORLD", "Requested description update (" + world.Description.Length + " characters).");
             }
             if (request.UpdateCapacity)
             {
                 world.Capacity = request.Capacity;
-                VrcliLog.Info("WORLD", "Requested maximum capacity update: " + world.Capacity);
+                DeploymentLog.Info("WORLD", "Requested maximum capacity update: " + world.Capacity);
             }
             if (request.UpdateRecommendedCapacity)
             {
@@ -218,14 +218,14 @@ namespace KibaLab.VRCLI.Editor
                         " exceeds the effective maximum capacity " + world.Capacity + ".");
                 }
                 world.RecommendedCapacity = request.RecommendedCapacity;
-                VrcliLog.Info("WORLD", "Requested recommended capacity update: " + world.RecommendedCapacity);
+                DeploymentLog.Info("WORLD", "Requested recommended capacity update: " + world.RecommendedCapacity);
             }
             else if (request.UpdateCapacity && world.RecommendedCapacity > world.Capacity)
             {
                 world.RecommendedCapacity = world.Capacity;
-                VrcliLog.Info("WORLD", "Recommended capacity was clamped to the new maximum: " + world.RecommendedCapacity);
+                DeploymentLog.Info("WORLD", "Recommended capacity was clamped to the new maximum: " + world.RecommendedCapacity);
             }
-            if (request.UpdateWorldTags)
+            if (request.UpdateTags)
             {
                 List<string> tags = world.Tags ?? new List<string>();
                 foreach (string tag in request.Tags)
@@ -233,11 +233,11 @@ namespace KibaLab.VRCLI.Editor
                     if (!tags.Contains(tag)) tags.Add(tag);
                 }
                 world.Tags = tags;
-                VrcliLog.Info("WORLD", "Requested tags merged: " +
+                DeploymentLog.Info("WORLD", "Requested tags merged: " +
                     (request.Tags.Length == 0 ? "no additions" : string.Join(", ", request.Tags)));
             }
             if (request.UpdateThumbnail)
-                VrcliLog.Info("WORLD", "Requested thumbnail replacement: " + request.ThumbnailPath);
+                DeploymentLog.Info("WORLD", "Requested thumbnail replacement: " + request.ThumbnailPath);
         }
 
         private static void SynchronizeBuilderBlueprint(IVRCSdkWorldBuilderApi builder, string blueprintId)
@@ -289,7 +289,7 @@ namespace KibaLab.VRCLI.Editor
         private static void OpenScene(string scenePath)
         {
             EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
-            VrcliLog.Info("PREPARE", "Opened build scene: " + scenePath);
+            DeploymentLog.Info("PREPARE", "Opened build scene: " + scenePath);
         }
 
         private static void ValidateActivePlatform(string requestedPlatform)
@@ -302,16 +302,16 @@ namespace KibaLab.VRCLI.Editor
                     ", but VRCLI requested " + expected + ".");
             }
 
-            VrcliLog.Info("PREPARE", "Active Unity build target matches " + expected + ".");
+            DeploymentLog.Info("PREPARE", "Active Unity build target matches " + expected + ".");
 
             if (expected == BuildTarget.Android && EditorUserBuildSettings.androidBuildSubtarget != MobileTextureSubtarget.ASTC)
             {
                 EditorUserBuildSettings.androidBuildSubtarget = MobileTextureSubtarget.ASTC;
-                VrcliLog.Info("PREPARE", "Android texture compression target changed to ASTC.");
+                DeploymentLog.Info("PREPARE", "Android texture compression target changed to ASTC.");
             }
             else if (expected == BuildTarget.Android)
             {
-                VrcliLog.Info("PREPARE", "Android texture compression target is ASTC.");
+                DeploymentLog.Info("PREPARE", "Android texture compression target is ASTC.");
             }
         }
 
@@ -319,23 +319,23 @@ namespace KibaLab.VRCLI.Editor
         {
             if (!UpdateLayers.AreLayersSetup())
             {
-                VrcliLog.Info("PREPARE", "Configuring required VRChat project layers.");
+                DeploymentLog.Info("PREPARE", "Configuring required VRChat project layers.");
                 UpdateLayers.SetupEditorLayers();
-                VrcliLog.Info("PREPARE", "Required VRChat project layers were configured.");
+                DeploymentLog.Info("PREPARE", "Required VRChat project layers were configured.");
             }
             else
             {
-                VrcliLog.Info("PREPARE", "Required VRChat project layers are configured.");
+                DeploymentLog.Info("PREPARE", "Required VRChat project layers are configured.");
             }
             if (!UpdateLayers.IsCollisionLayerMatrixSetup())
             {
-                VrcliLog.Info("PREPARE", "Configuring the required VRChat collision matrix.");
+                DeploymentLog.Info("PREPARE", "Configuring the required VRChat collision matrix.");
                 UpdateLayers.SetupCollisionLayerMatrix();
-                VrcliLog.Info("PREPARE", "VRChat collision matrix was configured.");
+                DeploymentLog.Info("PREPARE", "VRChat collision matrix was configured.");
             }
             else
             {
-                VrcliLog.Info("PREPARE", "VRChat collision matrix is configured.");
+                DeploymentLog.Info("PREPARE", "VRChat collision matrix is configured.");
             }
         }
 
@@ -356,7 +356,7 @@ namespace KibaLab.VRCLI.Editor
 
         private static void OnBuildProgress(object sender, string status)
         {
-            VrcliLog.Info("BUILD", status);
+            DeploymentLog.Info("BUILD", status);
         }
 
         private static void OnApiUploadProgress(string status, float percentage)
@@ -387,7 +387,7 @@ namespace KibaLab.VRCLI.Editor
                 }
             }
 
-            VrcliLog.Info("UPLOAD", component + ": " + safeStatus + " " +
+            DeploymentLog.Info("UPLOAD", component + ": " + safeStatus + " " +
                 (componentProgress * 100f).ToString("F1", CultureInfo.InvariantCulture) + "% (overall " +
                 (bounded * 100f).ToString("F1", CultureInfo.InvariantCulture) + "%)");
         }

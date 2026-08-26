@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 public sealed class TerminalProgressRenderer : IProcessLineObserver
 {
@@ -141,7 +141,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
     {
         lock (gate)
         {
-            if (VrcliProgressLine.TryParse(line, out VrcliProgressLine? progress))
+            if (ProgressLine.TryParse(line, out ProgressLine? progress))
             {
                 ApplyProgressUnsafe(progress!);
             }
@@ -158,7 +158,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
     {
         lock (gate)
         {
-            ApplyProgressUnsafe(new VrcliProgressLine(string.Empty, area, message, startsPhase, null));
+            ApplyProgressUnsafe(new ProgressLine(string.Empty, area, message, startsPhase, null));
         }
     }
 
@@ -357,7 +357,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         }
     }
 
-    private void ApplyProgressUnsafe(VrcliProgressLine progress)
+    private void ApplyProgressUnsafe(ProgressLine progress)
     {
         if (!progress.StartsPhase && activeStage == progress.Area && !IsNoisyDetail(progress.Message))
             AddDetailUnsafe(lastMessage);

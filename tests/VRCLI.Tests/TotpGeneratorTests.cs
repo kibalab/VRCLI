@@ -1,6 +1,6 @@
-using KibaLab.VRCLI.Editor;
+using KibaLab.WorldDeployment.Editor;
 
-namespace VRCLI.Tests;
+namespace WorldDeployment.Tests;
 
 public sealed class TotpGeneratorTests
 {
@@ -15,7 +15,7 @@ public sealed class TotpGeneratorTests
     {
         const string secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 
-        string code = VrcliTotpGenerator.GenerateCode(
+        string code = TotpGenerator.GenerateCode(
             secret,
             DateTimeOffset.FromUnixTimeSeconds(unixTime),
             8);
@@ -28,7 +28,7 @@ public sealed class TotpGeneratorTests
     {
         DateTimeOffset timestamp = DateTimeOffset.FromUnixTimeSeconds(59);
 
-        string code = VrcliTotpGenerator.GenerateCode(
+        string code = TotpGenerator.GenerateCode(
             "gezd-gnbv gy3tqojq gezdgnbvgy3tqojq====",
             timestamp,
             8);
@@ -40,6 +40,6 @@ public sealed class TotpGeneratorTests
     public void RejectsInvalidBase32Secret()
     {
         Assert.Throws<ArgumentException>(() =>
-            VrcliTotpGenerator.GenerateCode("NOT_VALID_!", DateTimeOffset.UnixEpoch));
+            TotpGenerator.GenerateCode("NOT_VALID_!", DateTimeOffset.UnixEpoch));
     }
 }

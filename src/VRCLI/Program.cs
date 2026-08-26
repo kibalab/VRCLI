@@ -1,4 +1,4 @@
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 internal static class Program
 {
@@ -52,7 +52,7 @@ internal static class Program
 
         try
         {
-            VrcliApplication application = new(Console.Out, Console.Error, Console.In);
+            DeploymentApplication application = new(Console.Out, Console.Error);
             return await application.RunAsync(args, cancellation.Token);
         }
         finally

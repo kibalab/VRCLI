@@ -5,9 +5,9 @@ using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 
-namespace KibaLab.VRCLI.Editor
+namespace KibaLab.WorldDeployment.Editor
 {
-    public static class VrcliTotpGenerator
+    public static class TotpGenerator
     {
         public static string GenerateCode(string base32Secret, DateTimeOffset timestamp, int digits = 6)
         {

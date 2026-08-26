@@ -1,4 +1,4 @@
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 public static class BlueprintOutputWriter
 {

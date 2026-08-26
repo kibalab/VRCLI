@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 public sealed record ChildProcessResult(int ExitCode, bool TimedOut);
 
@@ -63,8 +63,9 @@ public static class ChildProcess
         while (await reader.ReadLineAsync(cancellationToken) is { } line)
         {
             string redacted = line;
-            foreach (string secret in secrets.Where(value => !string.IsNullOrEmpty(value)))
+            foreach (string secret in secrets)
             {
+                if (string.IsNullOrEmpty(secret)) continue;
                 redacted = redacted.Replace(secret, "***", StringComparison.Ordinal);
             }
             bool handled = observer != null && await observer.OnLineAsync(redacted, isError, cancellationToken);

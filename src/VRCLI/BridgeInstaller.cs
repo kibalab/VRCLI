@@ -1,4 +1,6 @@
-namespace KibaLab.VRCLI;
+using System.Buffers;
+
+namespace KibaLab.WorldDeployment;
 
 public static class BridgeInstaller
 {
@@ -15,7 +17,7 @@ public static class BridgeInstaller
 
         if (File.Exists(destinationManifest))
         {
-            CopyChangedFiles(source, destination);
+            Synchronize(source, destination);
             return destination;
         }
 
@@ -27,7 +29,7 @@ public static class BridgeInstaller
         string staging = destination + ".installing-" + Guid.NewGuid().ToString("N");
         try
         {
-            CopyDirectory(source, staging);
+            Synchronize(source, staging);
             Directory.Move(staging, destination);
             return destination;
         }
@@ -37,19 +39,30 @@ public static class BridgeInstaller
         }
     }
 
-    private static void CopyChangedFiles(string source, string destination)
+    private static void Synchronize(string source, string destination)
     {
-        foreach (string directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
-        {
-            Directory.CreateDirectory(Path.Combine(destination, Path.GetRelativePath(source, directory)));
-        }
+        Directory.CreateDirectory(destination);
+        HashSet<string> sourceFiles = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
-            string destinationFile = Path.Combine(destination, Path.GetRelativePath(source, file));
+            string relativePath = Path.GetRelativePath(source, file);
+            sourceFiles.Add(relativePath);
+            string destinationFile = Path.Combine(destination, relativePath);
             if (File.Exists(destinationFile) && FilesEqual(file, destinationFile)) continue;
             Directory.CreateDirectory(Path.GetDirectoryName(destinationFile)!);
             File.Copy(file, destinationFile, true);
+        }
+
+        foreach (string file in Directory.EnumerateFiles(destination, "*", SearchOption.AllDirectories))
+        {
+            if (!sourceFiles.Contains(Path.GetRelativePath(destination, file))) File.Delete(file);
+        }
+
+        foreach (string directory in Directory.EnumerateDirectories(destination, "*", SearchOption.AllDirectories)
+                     .OrderByDescending(path => path.Length))
+        {
+            if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory);
         }
     }
 
@@ -60,32 +73,25 @@ public static class BridgeInstaller
         if (leftInfo.Length != rightInfo.Length) return false;
 
         const int bufferSize = 81920;
-        byte[] leftBuffer = new byte[bufferSize];
-        byte[] rightBuffer = new byte[bufferSize];
-        using FileStream leftStream = File.OpenRead(left);
-        using FileStream rightStream = File.OpenRead(right);
-        while (true)
+        byte[] leftBuffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+        byte[] rightBuffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+        try
         {
-            int leftRead = leftStream.Read(leftBuffer, 0, leftBuffer.Length);
-            int rightRead = rightStream.Read(rightBuffer, 0, rightBuffer.Length);
-            if (leftRead != rightRead) return false;
-            if (leftRead == 0) return true;
-            if (!leftBuffer.AsSpan(0, leftRead).SequenceEqual(rightBuffer.AsSpan(0, rightRead))) return false;
+            using FileStream leftStream = File.OpenRead(left);
+            using FileStream rightStream = File.OpenRead(right);
+            while (true)
+            {
+                int leftRead = leftStream.Read(leftBuffer, 0, bufferSize);
+                int rightRead = rightStream.Read(rightBuffer, 0, bufferSize);
+                if (leftRead != rightRead) return false;
+                if (leftRead == 0) return true;
+                if (!leftBuffer.AsSpan(0, leftRead).SequenceEqual(rightBuffer.AsSpan(0, rightRead))) return false;
+            }
         }
-    }
-
-    private static void CopyDirectory(string source, string destination)
-    {
-        Directory.CreateDirectory(destination);
-        foreach (string directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
+        finally
         {
-            Directory.CreateDirectory(Path.Combine(destination, Path.GetRelativePath(source, directory)));
-        }
-
-        foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-        {
-            string destinationFile = Path.Combine(destination, Path.GetRelativePath(source, file));
-            File.Copy(file, destinationFile, false);
+            ArrayPool<byte>.Shared.Return(leftBuffer);
+            ArrayPool<byte>.Shared.Return(rightBuffer);
         }
     }
 }

@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
-public sealed record VrcliProgressLine(
+public sealed record ProgressLine(
     string Elapsed,
     string Area,
     string Message,
@@ -11,20 +11,20 @@ public sealed record VrcliProgressLine(
     double? OverallProgress)
 {
     private static readonly Regex LinePattern = new(
-        @"^\[VRCLI\]\[(?<elapsed>\d{2}:\d{2}:\d{2}\.\d{3})\]\[(?<area>[A-Z]+)\] (?<message>.*)$",
+        @"\G\[VRCLI\]\[(?<elapsed>\d{2}:\d{2}:\d{2}\.\d{3})\]\[(?<area>[A-Z]+)\] (?<message>.*)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex ProgressPattern = new(
         @"overall (?<percent>\d+(?:\.\d+)?)%",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
-    public static bool TryParse(string line, out VrcliProgressLine? progress)
+    public static bool TryParse(string line, out ProgressLine? progress)
     {
         progress = null;
         int prefix = line.IndexOf("[VRCLI][", StringComparison.Ordinal);
         if (prefix < 0) return false;
 
-        Match match = LinePattern.Match(line[prefix..]);
+        Match match = LinePattern.Match(line, prefix);
         if (!match.Success) return false;
 
         string message = match.Groups["message"].Value;
@@ -42,7 +42,7 @@ public sealed record VrcliProgressLine(
             overall = Math.Clamp(parsed / 100d, 0d, 1d);
         }
 
-        progress = new VrcliProgressLine(
+        progress = new ProgressLine(
             match.Groups["elapsed"].Value,
             match.Groups["area"].Value,
             message,

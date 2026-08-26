@@ -1,22 +1,22 @@
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 public sealed record DeployOptions(
     string ProjectPath,
     string BlueprintId,
-    bool CreateWorld,
-    string? WorldName,
-    string? WorldDescription,
+    bool IsNew,
+    string? Title,
+    string? Description,
     string? ThumbnailPath,
     int Capacity,
     int RecommendedCapacity,
-    bool CapacitySpecified,
-    bool RecommendedCapacitySpecified,
+    bool HasCapacity,
+    bool HasRecommendedCapacity,
     IReadOnlyList<string> Tags,
-    bool TagsSpecified,
+    bool HasTags,
     string? BlueprintOutputPath,
     string Username,
     string Password,
-    VrcliPlatform Platform,
+    BuildPlatform Platform,
     string? ScenePath,
     string? UnityPath,
     string? TwoFactorCode,
@@ -24,11 +24,11 @@ public sealed record DeployOptions(
     bool InteractiveTwoFactor,
     TimeSpan Timeout,
     bool SkipVpmResolve,
-    bool AcceptContentOwnership,
+    bool OwnershipAccepted,
     bool Verbose,
     TerminalMode TerminalMode);
 
-public enum VrcliPlatform
+public enum BuildPlatform
 {
     StandaloneWindows64,
     Android

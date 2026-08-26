@@ -2,9 +2,9 @@ using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
-using KibaLab.VRCLI;
+using KibaLab.WorldDeployment;
 
-namespace VRCLI.Tests;
+namespace WorldDeployment.Tests;
 
 public sealed class InteractiveTwoFactorServerTests
 {

@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 public static partial class ProjectInspector
 {

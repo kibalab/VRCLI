@@ -1,6 +1,6 @@
-using KibaLab.VRCLI;
+using KibaLab.WorldDeployment;
 
-namespace VRCLI.Tests;
+namespace WorldDeployment.Tests;
 
 public sealed class BridgeInstallerTests : IDisposable
 {
@@ -40,6 +40,24 @@ public sealed class BridgeInstallerTests : IDisposable
         BridgeInstaller.InstallIfMissing(project, applicationDirectory);
 
         Assert.Equal("// new", File.ReadAllText(Path.Combine(installed, "Bridge.cs")));
+    }
+
+    [Fact]
+    public void RemovesFilesThatAreNoLongerBundled()
+    {
+        string applicationDirectory = Path.Combine(root, "app-sync");
+        string source = Path.Combine(applicationDirectory, "UnityBridge");
+        string project = Path.Combine(root, "project-sync");
+        string installed = Path.Combine(project, "Packages", "com.kibalab.vrcli");
+        Directory.CreateDirectory(source);
+        Directory.CreateDirectory(installed);
+        File.WriteAllText(Path.Combine(source, "package.json"), "{}");
+        File.WriteAllText(Path.Combine(installed, "package.json"), "{}");
+        File.WriteAllText(Path.Combine(installed, "Obsolete.cs"), "// obsolete");
+
+        BridgeInstaller.InstallIfMissing(project, applicationDirectory);
+
+        Assert.False(File.Exists(Path.Combine(installed, "Obsolete.cs")));
     }
 
     public void Dispose()

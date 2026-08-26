@@ -9,9 +9,9 @@ using VRC.Core;
 using VRC.SDKBase.Editor;
 using VRC.SDKBase.Editor.Api;
 
-namespace KibaLab.VRCLI.Editor
+namespace KibaLab.WorldDeployment.Editor
 {
-    public static class VrcliEntryPoint
+    public static class DeploymentEntryPoint
     {
         private static bool running;
 
@@ -30,28 +30,28 @@ namespace KibaLab.VRCLI.Editor
 
         private static async void Begin()
         {
-            VrcliRequest request = null;
+            DeploymentRequest request = null;
             try
             {
-                VrcliLog.Start();
-                request = VrcliRequest.FromEnvironment();
-                VrcliLog.Phase("BOOT", "Deployment request accepted for " + request.Platform + ".");
-                await VrcliAuthentication.LoginAsync(request);
-                VrcliLog.Phase("CONTEXT", "Authentication complete. Resolving deployment context.");
-                string scenePath = VrcliWorldDeployer.ResolveScenePath(request.ScenePath);
+                DeploymentLog.Start();
+                request = DeploymentRequest.FromEnvironment();
+                DeploymentLog.Phase("BOOT", "Deployment request accepted for " + request.Platform + ".");
+                await Authentication.LoginAsync(request);
+                DeploymentLog.Phase("CONTEXT", "Authentication complete. Resolving deployment context.");
+                string scenePath = WorldDeployer.ResolveScenePath(request.ScenePath);
                 LogDeploymentContext(request, scenePath);
-                string worldId = await VrcliWorldDeployer.DeployAsync(request, scenePath);
-                VrcliResult.Write(request.ResultFile, true, 0, worldId, request.CreateWorld, request.Platform, "complete", request.CreateWorld ? "World created, built, and uploaded." : "World build and upload completed.");
-                VrcliLog.Phase("COMPLETE", "Deployment completed successfully for " + worldId + ".");
+                string worldId = await WorldDeployer.DeployAsync(request, scenePath);
+                DeploymentResult.Write(request.ResultFile, true, 0, worldId, request.IsNew, request.Platform, "complete", request.IsNew ? "World created, built, and uploaded." : "World build and upload completed.");
+                DeploymentLog.Phase("COMPLETE", "Deployment completed successfully for " + worldId + ".");
                 EditorApplication.Exit(0);
             }
             catch (Exception exception)
             {
                 int exitCode = Classify(exception);
-                string resultFile = request != null ? request.ResultFile : Environment.GetEnvironmentVariable("VRCLI_RESULT_FILE");
+                string resultFile = request != null ? request.ResultFile : Environment.GetEnvironmentVariable(DeploymentEnvironment.ResultFile);
                 if (!string.IsNullOrWhiteSpace(resultFile))
                 {
-                    VrcliResult.Write(
+                    DeploymentResult.Write(
                         resultFile,
                         false,
                         exitCode,
@@ -61,37 +61,37 @@ namespace KibaLab.VRCLI.Editor
                         StageFor(exitCode),
                         Describe(exception));
                 }
-                VrcliLog.Info("FAILED", "Phase " + VrcliLog.CurrentPhase + " failed with exit code " + exitCode + ": " + Describe(exception));
+                DeploymentLog.Info("FAILED", "Phase " + DeploymentLog.CurrentPhase + " failed with exit code " + exitCode + ": " + Describe(exception));
                 Debug.LogException(exception);
                 EditorApplication.Exit(exitCode);
             }
         }
 
-        private static void LogDeploymentContext(VrcliRequest request, string scenePath)
+        private static void LogDeploymentContext(DeploymentRequest request, string scenePath)
         {
             string projectRoot = Directory.GetParent(Application.dataPath).FullName;
             APIUser user = APIUser.CurrentUser;
-            VrcliLog.Info("CONTEXT", "Deployment context:");
-            VrcliLog.Info("CONTEXT", "Account: " + user.displayName + " (" + user.id + ")");
-            VrcliLog.Info("CONTEXT", "Project: " + PlayerSettings.productName);
-            VrcliLog.Info("CONTEXT", "Project root: " + projectRoot);
-            VrcliLog.Info("CONTEXT", "Project version: " + PlayerSettings.bundleVersion);
-            VrcliLog.Info("CONTEXT", "Scene: " + scenePath);
-            VrcliLog.Info("CONTEXT", "Requested platform: " + request.Platform);
-            VrcliLog.Info("CONTEXT", "Unity active target: " + EditorUserBuildSettings.activeBuildTarget);
-            VrcliLog.Info("CONTEXT", "Unity version: " + Application.unityVersion);
-            VrcliLog.Info("CONTEXT", "VRChat SDK version: " + VRC.Tools.SdkVersion);
-            VrcliLog.Info("CONTEXT", "VRChat SDK platform: " + VRC.Tools.Platform);
-            VrcliLog.Info("CONTEXT", "VRCLI bridge version: " + VrcliLog.Version);
-            VrcliLog.Info("CONTEXT", "Mode: " + (request.CreateWorld ? "create new private world" : "update existing world"));
-            VrcliLog.Info("CONTEXT", "Blueprint: " + request.BlueprintId);
+            DeploymentLog.Info("CONTEXT", "Deployment context:");
+            DeploymentLog.Info("CONTEXT", "Account: " + user.displayName + " (" + user.id + ")");
+            DeploymentLog.Info("CONTEXT", "Project: " + PlayerSettings.productName);
+            DeploymentLog.Info("CONTEXT", "Project root: " + projectRoot);
+            DeploymentLog.Info("CONTEXT", "Project version: " + PlayerSettings.bundleVersion);
+            DeploymentLog.Info("CONTEXT", "Scene: " + scenePath);
+            DeploymentLog.Info("CONTEXT", "Requested platform: " + request.Platform);
+            DeploymentLog.Info("CONTEXT", "Unity active target: " + EditorUserBuildSettings.activeBuildTarget);
+            DeploymentLog.Info("CONTEXT", "Unity version: " + Application.unityVersion);
+            DeploymentLog.Info("CONTEXT", "VRChat SDK version: " + VRC.Tools.SdkVersion);
+            DeploymentLog.Info("CONTEXT", "VRChat SDK platform: " + VRC.Tools.Platform);
+            DeploymentLog.Info("CONTEXT", "VRCLI bridge version: " + DeploymentLog.Version);
+            DeploymentLog.Info("CONTEXT", "Mode: " + (request.IsNew ? "create new private world" : "update existing world"));
+            DeploymentLog.Info("CONTEXT", "Blueprint: " + request.BlueprintId);
         }
 
         private static int Classify(Exception exception)
         {
             if (exception is ArgumentException || exception is FileNotFoundException) return 10;
-            if (exception is VrcliAuthenticationException) return 30;
-            if (exception is VrcliOwnershipException || exception is OwnershipException) return 60;
+            if (exception is LoginException) return 30;
+            if (exception is ContentOwnershipException || exception is OwnershipException) return 60;
             if (exception is ValidationException || exception is BuilderException || exception is BuildBlockedException) return 40;
             if (exception is UploadException || exception is BundleExistsException) return 50;
             if (exception is ApiErrorException || exception is RequestFailedException) return 70;

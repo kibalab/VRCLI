@@ -1,6 +1,6 @@
-using KibaLab.VRCLI;
+using KibaLab.WorldDeployment;
 
-namespace VRCLI.Tests;
+namespace WorldDeployment.Tests;
 
 public sealed class CommandLineParserTests
 {
@@ -21,13 +21,13 @@ public sealed class CommandLineParserTests
                 "Android",
                 "--plain",
                 "--yes"
-            ], TextReader.Null);
+            ]);
 
             Assert.Null(result.Error);
             Assert.Equal(Directory.GetCurrentDirectory(), result.Options?.ProjectPath);
-            Assert.Equal(VrcliPlatform.Android, result.Options?.Platform);
+            Assert.Equal(BuildPlatform.Android, result.Options?.Platform);
             Assert.Equal(TerminalMode.Plain, result.Options?.TerminalMode);
-            Assert.True(result.Options?.AcceptContentOwnership);
+            Assert.True(result.Options?.OwnershipAccepted);
         }
         finally
         {
@@ -44,11 +44,11 @@ public sealed class CommandLineParserTests
         Environment.SetEnvironmentVariable("VRCLI_BLUEPRINT_ID", "wrld_from_environment");
         try
         {
-            ParseResult result = new CommandLineParser().Parse(["deploy", "--plain"], TextReader.Null);
+            ParseResult result = new CommandLineParser().Parse(["deploy", "--plain"]);
 
             Assert.Null(result.Error);
             Assert.Equal("wrld_from_environment", result.Options?.BlueprintId);
-            Assert.Equal(VrcliPlatform.StandaloneWindows64, result.Options?.Platform);
+            Assert.Equal(BuildPlatform.StandaloneWindows64, result.Options?.Platform);
         }
         finally
         {
@@ -78,16 +78,15 @@ public sealed class CommandLineParserTests
         try
         {
             ParseResult result = new CommandLineParser().Parse(
-                ["deploy", "--config", config],
-                TextReader.Null);
+                ["deploy", "--config", config]);
 
             Assert.Null(result.Error);
             Assert.Equal(directory, result.Options?.ProjectPath);
             Assert.Equal("wrld_from_config", result.Options?.BlueprintId);
             Assert.Equal("Assets/Scenes/Main.unity", result.Options?.ScenePath);
-            Assert.Equal(VrcliPlatform.Android, result.Options?.Platform);
+            Assert.Equal(BuildPlatform.Android, result.Options?.Platform);
             Assert.Equal(TerminalMode.Plain, result.Options?.TerminalMode);
-            Assert.True(result.Options?.AcceptContentOwnership);
+            Assert.True(result.Options?.OwnershipAccepted);
         }
         finally
         {
@@ -114,11 +113,11 @@ public sealed class CommandLineParserTests
         Environment.SetEnvironmentVariable("VRCLI_PASSWORD", "secret");
         try
         {
-            ParseResult result = new CommandLineParser().Parse(["deploy", "--config", config], TextReader.Null);
+            ParseResult result = new CommandLineParser().Parse(["deploy", "--config", config]);
 
             Assert.Null(result.Error);
-            Assert.True(result.Options?.CreateWorld);
-            Assert.Equal("Configured World", result.Options?.WorldName);
+            Assert.True(result.Options?.IsNew);
+            Assert.Equal("Configured World", result.Options?.Title);
             Assert.Equal(Path.Combine(directory, "thumbnail.png"), result.Options?.ThumbnailPath);
         }
         finally
@@ -137,8 +136,7 @@ public sealed class CommandLineParserTests
         try
         {
             ParseResult result = new CommandLineParser().Parse(
-                ["deploy", "--config", config, "--login", "kibalab", "--password", "secret"],
-                TextReader.Null);
+                ["deploy", "--config", config, "--login", "kibalab", "--password", "secret"]);
 
             Assert.Contains("could not be mapped", result.Error, StringComparison.OrdinalIgnoreCase);
         }
@@ -165,12 +163,12 @@ public sealed class CommandLineParserTests
             "--password",
             "secret",
             "--plain"
-        ], TextReader.Null);
+        ]);
 
         Assert.Null(result.Error);
-        Assert.True(result.Options?.CreateWorld);
-        Assert.Equal("My World", result.Options?.WorldName);
-        Assert.Equal(VrcliPlatform.StandaloneWindows64, result.Options?.Platform);
+        Assert.True(result.Options?.IsNew);
+        Assert.Equal("My World", result.Options?.Title);
+        Assert.Equal(BuildPlatform.StandaloneWindows64, result.Options?.Platform);
     }
 
     [Fact]
@@ -185,12 +183,12 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", "StandaloneWindows64"
-        }, TextReader.Null);
+        });
 
         Assert.Null(result.Error);
         Assert.NotNull(result.Options);
         Assert.Equal("kibalab", result.Options.Username);
-        Assert.Equal(VrcliPlatform.StandaloneWindows64, result.Options.Platform);
+        Assert.Equal(BuildPlatform.StandaloneWindows64, result.Options.Platform);
     }
 
     [Fact]
@@ -205,7 +203,7 @@ public sealed class CommandLineParserTests
             "--id", "kibalab",
             "--password", "1234",
             "--platform", "Android"
-        }, TextReader.Null);
+        });
 
         Assert.Contains("Unknown option", result.Error);
     }
@@ -222,7 +220,7 @@ public sealed class CommandLineParserTests
             "--password", "1234",
             "--platform", "Android",
             "--plain"
-        }, TextReader.Null);
+        });
 
         Assert.Null(result.Error);
         Assert.Equal(TerminalMode.Plain, result.Options?.TerminalMode);
@@ -244,7 +242,7 @@ public sealed class CommandLineParserTests
                 "--platform", "Android",
                 "--interactive-two-factor",
                 "--tui"
-            }, TextReader.Null);
+            });
 
             Assert.Null(result.Error);
             Assert.True(result.Options?.InteractiveTwoFactor);
@@ -271,7 +269,7 @@ public sealed class CommandLineParserTests
                 "--password", "1234",
                 "--platform", "Android",
                 "--two-factor-code", "123456"
-            }, TextReader.Null);
+            });
 
             Assert.Null(result.Error);
             Assert.Equal("123456", result.Options?.TwoFactorCode);
@@ -295,7 +293,7 @@ public sealed class CommandLineParserTests
             "--password", "1234",
             "--platform", "Android",
             "--no-tui"
-        }, TextReader.Null);
+        });
 
         Assert.Contains("Unknown option", result.Error);
     }
@@ -311,7 +309,7 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", "Android"
-        }, TextReader.Null);
+        });
 
         Assert.Contains("wrld_", result.Error);
     }
@@ -327,7 +325,7 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password-stdin",
             "--platform", "Android"
-        }, new StringReader("secret-from-stdin\n"));
+        });
 
         Assert.Contains("Unknown option", result.Error);
     }
@@ -347,7 +345,7 @@ public sealed class CommandLineParserTests
                 "--login", "kibalab",
                 "--password", "1234",
                 "--platform", "Android"
-            }, TextReader.Null);
+            });
 
             Assert.Null(result.Error);
             Assert.Equal("JBSWY3DPEHPK3PXP", result.Options?.TotpSecret);
@@ -378,13 +376,13 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", "StandaloneWindows64"
-        }, TextReader.Null);
+        });
 
         Assert.Null(result.Error);
         Assert.NotNull(result.Options);
-        Assert.True(result.Options.CreateWorld);
+        Assert.True(result.Options.IsNew);
         Assert.StartsWith("wrld_", result.Options.BlueprintId);
-        Assert.Equal("My New World", result.Options.WorldName);
+        Assert.Equal("My New World", result.Options.Title);
         Assert.Equal(48, result.Options.Capacity);
         Assert.Equal(24, result.Options.RecommendedCapacity);
         Assert.Equal(new[] { "author_tag_social", "content_other" }, result.Options.Tags);
@@ -408,7 +406,7 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", "StandaloneWindows64"
-        }, TextReader.Null, "wrld_preserved_for_retry");
+        }, "wrld_preserved_for_retry");
 
         Assert.Null(result.Error);
         Assert.Equal("wrld_preserved_for_retry", result.Options?.BlueprintId);
@@ -428,7 +426,7 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", "Android"
-        }, TextReader.Null);
+        });
 
         Assert.Contains("Choose one target", result.Error);
     }
@@ -444,7 +442,7 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", "Android"
-        }, TextReader.Null);
+        });
 
         Assert.Contains("--title", result.Error);
         Assert.Contains("--thumbnail", result.Error);
@@ -465,7 +463,7 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", "Android"
-        }, TextReader.Null);
+        });
 
         Assert.Contains("--capacity", result.Error);
     }
@@ -487,19 +485,19 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", "Android"
-        }, TextReader.Null);
+        });
 
         Assert.Null(result.Error);
         Assert.NotNull(result.Options);
-        Assert.False(result.Options.CreateWorld);
-        Assert.Equal("Updated World", result.Options.WorldName);
-        Assert.Equal("Updated description", result.Options.WorldDescription);
+        Assert.False(result.Options.IsNew);
+        Assert.Equal("Updated World", result.Options.Title);
+        Assert.Equal("Updated description", result.Options.Description);
         Assert.NotNull(result.Options.ThumbnailPath);
         Assert.Equal(40, result.Options.Capacity);
         Assert.Equal(20, result.Options.RecommendedCapacity);
-        Assert.True(result.Options.CapacitySpecified);
-        Assert.True(result.Options.RecommendedCapacitySpecified);
-        Assert.True(result.Options.TagsSpecified);
+        Assert.True(result.Options.HasCapacity);
+        Assert.True(result.Options.HasRecommendedCapacity);
+        Assert.True(result.Options.HasTags);
         Assert.Equal(["author_tag_social"], result.Options.Tags);
     }
 
@@ -512,14 +510,14 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", "StandaloneWindows64"
-        }, TextReader.Null);
+        });
 
         Assert.Null(result.Error);
-        Assert.Null(result.Options?.WorldName);
-        Assert.Null(result.Options?.WorldDescription);
-        Assert.False(result.Options?.CapacitySpecified);
-        Assert.False(result.Options?.RecommendedCapacitySpecified);
-        Assert.False(result.Options?.TagsSpecified);
+        Assert.Null(result.Options?.Title);
+        Assert.Null(result.Options?.Description);
+        Assert.False(result.Options?.HasCapacity);
+        Assert.False(result.Options?.HasRecommendedCapacity);
+        Assert.False(result.Options?.HasTags);
     }
 
     [Fact]
@@ -532,11 +530,11 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", "Android"
-        }, TextReader.Null);
+        });
 
         Assert.Null(result.Error);
-        Assert.False(result.Options?.CapacitySpecified);
-        Assert.True(result.Options?.RecommendedCapacitySpecified);
+        Assert.False(result.Options?.HasCapacity);
+        Assert.True(result.Options?.HasRecommendedCapacity);
         Assert.Equal(64, result.Options?.RecommendedCapacity);
     }
 
@@ -549,7 +547,7 @@ public sealed class CommandLineParserTests
             "--login", "user@example.com",
             "--password", "secret",
             "--platform", "StandaloneWindows64"
-        }, TextReader.Null);
+        });
 
         Assert.Null(result.Error);
         Assert.Equal("user@example.com", result.Options?.Username);
@@ -565,7 +563,7 @@ public sealed class CommandLineParserTests
             "--thumbnail", "thumbnail.png",
             "--login", "kibalab",
             "--password", "1234"
-        }, TextReader.Null);
+        });
 
         Assert.Contains("--title", result.Error);
     }
@@ -585,7 +583,7 @@ public sealed class CommandLineParserTests
     [InlineData("--totp-secret-env")]
     public void RejectsRemovedCompatibilityOptions(string option)
     {
-        ParseResult result = new CommandLineParser().Parse(["deploy", option], TextReader.Null);
+        ParseResult result = new CommandLineParser().Parse(["deploy", option]);
 
         Assert.Equal($"Unknown option: {option}", result.Error);
     }
@@ -603,7 +601,7 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", platform
-        }, TextReader.Null);
+        });
 
         Assert.Contains("StandaloneWindows64 or Android", result.Error);
     }
@@ -621,7 +619,7 @@ public sealed class CommandLineParserTests
             "--login", "kibalab",
             "--password", "1234",
             "--platform", "StandaloneWindows64"
-        }, TextReader.Null);
+        });
 
         Assert.Null(result.Error);
         Assert.Equal(256, result.Options?.Capacity);

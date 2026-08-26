@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 public sealed class CommandLineParser
 {
@@ -39,7 +39,7 @@ public sealed class CommandLineParser
         "title"
     };
 
-    public ParseResult Parse(string[] args, TextReader input, string? createBlueprintOverride = null)
+    public ParseResult Parse(string[] args, string? newBlueprintOverride = null)
     {
         if (args.Length == 0)
         {
@@ -49,7 +49,7 @@ public sealed class CommandLineParser
         int index = string.Equals(args[0], "deploy", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         Dictionary<string, string?> values = new(StringComparer.OrdinalIgnoreCase);
         List<string> tags = new();
-        bool tagsSpecified = false;
+        bool hasTags = false;
 
         while (index < args.Length)
         {
@@ -85,7 +85,7 @@ public sealed class CommandLineParser
                     return ParseResult.Failure("--tag must be non-empty and cannot contain '|' or ','.");
                 }
                 tags.Add(tag);
-                tagsSpecified = true;
+                hasTags = true;
                 index += 2;
                 continue;
             }
@@ -122,73 +122,67 @@ public sealed class CommandLineParser
             return ParseResult.Help();
         }
 
-        SetMissing(values, "project", Environment.GetEnvironmentVariable("VRCLI_PROJECT"));
-        SetMissing(values, "login", Environment.GetEnvironmentVariable("VRCLI_USERNAME"));
-        SetMissing(values, "platform", Environment.GetEnvironmentVariable("VRCLI_PLATFORM"));
+        SetMissing(values, "project", Environment.GetEnvironmentVariable(DeploymentEnvironment.Project));
+        SetMissing(values, "login", Environment.GetEnvironmentVariable(DeploymentEnvironment.Username));
+        SetMissing(values, "platform", Environment.GetEnvironmentVariable(DeploymentEnvironment.Platform));
         if (!values.ContainsKey("new"))
-            SetMissing(values, "blueprint", Environment.GetEnvironmentVariable("VRCLI_BLUEPRINT_ID"));
+            SetMissing(values, "blueprint", Environment.GetEnvironmentVariable(DeploymentEnvironment.BlueprintId));
 
-        if (!TryApplyProjectConfig(values, tags, ref tagsSpecified, out string? configDirectory, out string? configError))
+        if (!TryApplyProjectConfig(values, tags, ref hasTags, out string? configDirectory, out string? configError))
         {
             return ParseResult.Failure(configError!);
         }
 
-        string? projectPath = Get(values, "project") ??
-                              Environment.GetEnvironmentVariable("VRCLI_PROJECT") ??
-                              configDirectory ??
-                              Directory.GetCurrentDirectory();
-        bool createWorld = values.ContainsKey("new");
-        string? blueprint = Get(values, "blueprint") ??
-                            (createWorld ? null : Environment.GetEnvironmentVariable("VRCLI_BLUEPRINT_ID"));
-        string? username = Get(values, "login") ?? Environment.GetEnvironmentVariable("VRCLI_USERNAME");
-        string? platformValue = Get(values, "platform") ??
-                                Environment.GetEnvironmentVariable("VRCLI_PLATFORM") ??
-                                "StandaloneWindows64";
+        string projectPath = Get(values, "project") ?? configDirectory ?? Directory.GetCurrentDirectory();
+        bool isNew = values.ContainsKey("new");
+        string? blueprint = Get(values, "blueprint");
+        string? username = Get(values, "login");
+        string platformValue = Get(values, "platform") ?? "StandaloneWindows64";
 
         if (string.IsNullOrWhiteSpace(username))
         {
             return ParseResult.Failure("Set VRCLI_USERNAME or provide --login <username-or-email>.");
         }
 
-        if (createWorld == !string.IsNullOrWhiteSpace(blueprint))
+        if (isNew == !string.IsNullOrWhiteSpace(blueprint))
         {
             return ParseResult.Failure(
                 "Choose one target: --blueprint <wrld_id>, --new, VRCLI_BLUEPRINT_ID, or a vrcli.json setting.");
         }
 
-        string? worldName = Get(values, "title");
-        string? worldDescription = Get(values, "description");
+        string? title = Get(values, "title");
+        string? description = Get(values, "description");
         string? thumbnailPath = Get(values, "thumbnail");
-        if (createWorld)
+        if (isNew)
         {
-            List<string> createMissing = new();
-            if (string.IsNullOrWhiteSpace(worldName)) createMissing.Add("--title");
-            if (string.IsNullOrWhiteSpace(thumbnailPath)) createMissing.Add("--thumbnail");
-            if (createMissing.Count > 0)
+            List<string> missingMetadata = new();
+            if (string.IsNullOrWhiteSpace(title)) missingMetadata.Add("--title");
+            if (string.IsNullOrWhiteSpace(thumbnailPath)) missingMetadata.Add("--thumbnail");
+            if (missingMetadata.Count > 0)
             {
                 return ParseResult.Failure(
                     "New worlds require --new, --title <name>, and --thumbnail <image>. Missing: " +
-                    string.Join(", ", createMissing));
+                    string.Join(", ", missingMetadata));
             }
 
-            if (createBlueprintOverride != null &&
-                !createBlueprintOverride.StartsWith("wrld_", StringComparison.Ordinal))
+            if (newBlueprintOverride != null &&
+                !newBlueprintOverride.StartsWith("wrld_", StringComparison.Ordinal))
             {
                 return ParseResult.Failure("The internally preserved new-world Blueprint ID is invalid.");
             }
-            blueprint = createBlueprintOverride ?? "wrld_" + Guid.NewGuid();
+            blueprint = newBlueprintOverride ?? "wrld_" + Guid.NewGuid();
         }
         if (!blueprint!.StartsWith("wrld_", StringComparison.Ordinal))
         {
             return ParseResult.Failure("--blueprint must be a VRChat world ID beginning with 'wrld_'.");
         }
 
-        bool capacitySpecified = values.ContainsKey("capacity");
-        bool recommendedCapacitySpecified = values.ContainsKey("recommended-capacity");
+        bool hasCapacity = values.ContainsKey("capacity");
+        bool hasRecommendedCapacity = values.ContainsKey("recommended-capacity");
         if (!TryParseCapacity(
                 Get(values, "capacity"),
                 Get(values, "recommended-capacity"),
-                createWorld,
+                isNew,
                 out int capacity,
                 out int recommendedCapacity,
                 out string? capacityError))
@@ -196,12 +190,12 @@ public sealed class CommandLineParser
             return ParseResult.Failure(capacityError!);
         }
 
-        if (!TryParsePlatform(platformValue, out VrcliPlatform platform))
+        if (!TryParsePlatform(platformValue, out BuildPlatform platform))
         {
             return ParseResult.Failure("--platform must be StandaloneWindows64 or Android.");
         }
 
-        string? password = Get(values, "password") ?? Environment.GetEnvironmentVariable("VRCLI_PASSWORD");
+        string? password = Get(values, "password") ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.Password);
 
         if (string.IsNullOrEmpty(password))
         {
@@ -236,10 +230,10 @@ public sealed class CommandLineParser
         bool interactiveTwoFactor = values.ContainsKey("interactive-two-factor");
         string? twoFactorCode = interactiveTwoFactor
             ? null
-            : Get(values, "two-factor-code") ?? Environment.GetEnvironmentVariable("VRCLI_TWO_FACTOR_CODE");
+            : Get(values, "two-factor-code") ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorCode);
         string? totpSecret = interactiveTwoFactor || !string.IsNullOrWhiteSpace(twoFactorCode)
             ? null
-            : Environment.GetEnvironmentVariable("VRCLI_TOTP_SECRET");
+            : Environment.GetEnvironmentVariable(DeploymentEnvironment.TotpSecret);
         if (!string.IsNullOrWhiteSpace(twoFactorCode) && !string.IsNullOrWhiteSpace(totpSecret))
         {
             return ParseResult.Failure("Use only one of --two-factor-code/VRCLI_TWO_FACTOR_CODE or VRCLI_TOTP_SECRET.");
@@ -252,16 +246,16 @@ public sealed class CommandLineParser
         DeployOptions options = new(
             fullProjectPath,
             blueprint,
-            createWorld,
-            worldName,
-            worldDescription,
+            isNew,
+            title,
+            description,
             fullThumbnailPath,
             capacity,
             recommendedCapacity,
-            capacitySpecified,
-            recommendedCapacitySpecified,
+            hasCapacity,
+            hasRecommendedCapacity,
             tags.Distinct(StringComparer.Ordinal).ToArray(),
-            tagsSpecified,
+            hasTags,
             blueprintOutputPath,
             username!,
             password,
@@ -283,7 +277,7 @@ public sealed class CommandLineParser
     private static bool TryApplyProjectConfig(
         Dictionary<string, string?> values,
         List<string> tags,
-        ref bool tagsSpecified,
+        ref bool hasTags,
         out string? configDirectory,
         out string? error)
     {
@@ -315,7 +309,7 @@ public sealed class CommandLineParser
             }
 
             configDirectory = Path.GetDirectoryName(fullConfigPath)!;
-            VrcliProjectConfig config = VrcliProjectConfig.Load(fullConfigPath);
+            ProjectConfig config = ProjectConfig.Load(fullConfigPath);
             SetMissing(values, "project", ResolveFromConfig(config.Project, configDirectory));
             if (!values.ContainsKey("new"))
                 SetMissing(values, "blueprint", config.Blueprint);
@@ -335,10 +329,10 @@ public sealed class CommandLineParser
             if (config.Plain == true && !values.ContainsKey("tui")) values["plain"] = "true";
             if (config.Yes == true) values["yes"] = "true";
             if (config.SkipVpmResolve == true) values["skip-vpm-resolve"] = "true";
-            if (!tagsSpecified && config.Tags != null)
+            if (!hasTags && config.Tags != null)
             {
                 tags.AddRange(config.Tags);
-                tagsSpecified = true;
+                hasTags = true;
             }
             return true;
         }
@@ -361,15 +355,15 @@ public sealed class CommandLineParser
         return Path.IsPathFullyQualified(value) ? value : Path.GetFullPath(Path.Combine(configDirectory, value));
     }
 
-    private static bool TryParsePlatform(string value, out VrcliPlatform platform)
+    private static bool TryParsePlatform(string value, out BuildPlatform platform)
     {
         switch (value.Trim().ToLowerInvariant())
         {
             case "standalonewindows64":
-                platform = VrcliPlatform.StandaloneWindows64;
+                platform = BuildPlatform.StandaloneWindows64;
                 return true;
             case "android":
-                platform = VrcliPlatform.Android;
+                platform = BuildPlatform.Android;
                 return true;
             default:
                 platform = default;
@@ -380,7 +374,7 @@ public sealed class CommandLineParser
     private static bool TryParseCapacity(
         string? capacityValue,
         string? recommendedValue,
-        bool createWorld,
+        bool isNew,
         out int capacity,
         out int recommendedCapacity,
         out string? error)
@@ -396,7 +390,7 @@ public sealed class CommandLineParser
             return false;
         }
 
-        recommendedCapacity = createWorld ? Math.Min(16, capacity) : 16;
+        recommendedCapacity = isNew ? Math.Min(16, capacity) : 16;
         if (recommendedValue != null &&
             (!int.TryParse(recommendedValue, NumberStyles.None, CultureInfo.InvariantCulture, out recommendedCapacity) ||
              recommendedCapacity < 1 || (capacityValue != null && recommendedCapacity > capacity)))

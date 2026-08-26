@@ -3,21 +3,21 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
-public sealed class VrcliApplication(
+public sealed class DeploymentApplication(
     TextWriter output,
     TextWriter error,
-    TextReader input,
-    string? createBlueprintOverride = null)
+    string? newBlueprintOverride = null)
 {
+    private static readonly JsonSerializerOptions ResultJsonOptions = new() { WriteIndented = true };
     private readonly CommandLineParser parser = new();
 
-    public VrcliResult? LastResult { get; private set; }
+    public DeploymentResult? LastResult { get; private set; }
 
     public async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
     {
-        ParseResult parsed = parser.Parse(args, input, createBlueprintOverride);
+        ParseResult parsed = parser.Parse(args, newBlueprintOverride);
         if (parsed.ShowHelp)
         {
             await output.WriteLineAsync(HelpText);
@@ -65,7 +65,7 @@ public sealed class VrcliApplication(
             string projectName = Path.GetFileName(options.ProjectPath.TrimEnd(
                 Path.DirectorySeparatorChar,
                 Path.AltDirectorySeparatorChar));
-            string targetName = options.CreateWorld ? "New world · " + options.WorldName : options.BlueprintId;
+            string targetName = options.IsNew ? "New world · " + options.Title : options.BlueprintId;
             terminalUi.SetOverview(
                 projectName,
                 targetName,
@@ -82,12 +82,8 @@ public sealed class VrcliApplication(
         if (terminalUi != null)
         {
             terminalUi.Start();
-            terminalUi.Report("BOOT", "Deployment request validated.", true);
         }
-        else
-        {
-            await output.WriteLineAsync("[VRCLI][BOOT] Deployment request validated; preparing dependencies and Unity bridge.");
-        }
+        await ReportAsync(terminalUi, "BOOT", "Deployment request validated; preparing dependencies and Unity bridge.", true);
 
         if (!options.SkipVpmResolve)
         {
@@ -107,19 +103,16 @@ public sealed class VrcliApplication(
                 return ExitCodes.TimedOut;
             }
         }
-        else if (terminalUi != null)
+        else
         {
-            terminalUi.Report("DEPENDENCIES", "VPM dependency restore skipped.", true);
+            await ReportAsync(terminalUi, "DEPENDENCIES", "VPM dependency restore skipped.", true);
         }
 
         try
         {
-            terminalUi?.Report("BRIDGE", "Preparing the Unity bridge package.", true);
+            await ReportAsync(terminalUi, "BRIDGE", "Preparing the Unity bridge package.", true);
             string bridge = BridgeInstaller.InstallIfMissing(options.ProjectPath, AppContext.BaseDirectory);
-            if (terminalUi != null)
-                terminalUi.Report("BRIDGE", "Unity bridge ready: " + bridge);
-            else
-                await output.WriteLineAsync($"[VRCLI][BRIDGE] Unity bridge ready: {bridge}");
+            await ReportAsync(terminalUi, "BRIDGE", "Unity bridge ready: " + bridge);
 
             UnityProjectConfigurationResult configuration =
                 UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(options.ProjectPath, options.Platform);
@@ -127,10 +120,7 @@ public sealed class VrcliApplication(
                 ? $"Initialized VRChat SDK defines for {configuration.TargetGroup}: " +
                   string.Join(", ", configuration.AddedDefines)
                 : $"VRChat SDK defines ready for {configuration.TargetGroup}.";
-            if (terminalUi != null)
-                terminalUi.Report("BRIDGE", configurationMessage);
-            else
-                await output.WriteLineAsync("[VRCLI][BRIDGE] " + configurationMessage);
+            await ReportAsync(terminalUi, "BRIDGE", configurationMessage);
         }
         catch (Exception exception)
         {
@@ -145,10 +135,11 @@ public sealed class VrcliApplication(
         Task? twoFactorTask = null;
         try
         {
-            if (terminalUi != null)
-                terminalUi.Report("UNITY", "Launching Unity and compiling project scripts.", true);
-            else
-                await output.WriteLineAsync("[VRCLI][UNITY] Launching Unity and compiling project scripts. Authentication follows compilation.");
+            await ReportAsync(
+                terminalUi,
+                "UNITY",
+                "Launching Unity and compiling project scripts. Authentication follows compilation.",
+                true);
             if (options.InteractiveTwoFactor && terminalUi != null)
             {
                 twoFactorServer = new InteractiveTwoFactorServer(terminalUi, secrets);
@@ -177,12 +168,12 @@ public sealed class VrcliApplication(
                 return ExitCodes.TimedOut;
             }
 
-            VrcliResult? bridgeResult = await ReadResultAsync(resultFile);
+            DeploymentResult? bridgeResult = await ReadResultAsync(resultFile);
             LastResult = bridgeResult;
             if (terminalUi != null) await terminalUi.FinishAsync(bridgeResult?.Success == true);
             if (bridgeResult != null)
             {
-                await output.WriteLineAsync(JsonSerializer.Serialize(bridgeResult, new JsonSerializerOptions { WriteIndented = true }));
+                await output.WriteLineAsync(JsonSerializer.Serialize(bridgeResult, ResultJsonOptions));
                 if (bridgeResult.Success && options.BlueprintOutputPath != null && !string.IsNullOrWhiteSpace(bridgeResult.WorldId))
                 {
                     try
@@ -241,10 +232,7 @@ public sealed class VrcliApplication(
         TerminalProgressRenderer? terminalUi,
         CancellationToken cancellationToken)
     {
-        if (terminalUi != null)
-            terminalUi.Report("DEPENDENCIES", "Restoring VPM project dependencies.", true);
-        else
-            await output.WriteLineAsync("[VRCLI][DEPENDENCIES] Restoring VPM project dependencies...");
+        await ReportAsync(terminalUi, "DEPENDENCIES", "Restoring VPM project dependencies...", true);
         ProcessStartInfo vpm = new("vpm") { WorkingDirectory = options.ProjectPath };
         vpm.ArgumentList.Add("resolve");
         vpm.ArgumentList.Add("project");
@@ -262,10 +250,7 @@ public sealed class VrcliApplication(
                 terminalUi);
             if (result.ExitCode == 0)
             {
-                if (terminalUi != null)
-                    terminalUi.Report("DEPENDENCIES", "VPM dependency restore completed.");
-                else
-                    await output.WriteLineAsync("[VRCLI][DEPENDENCIES] VPM dependency restore completed.");
+                await ReportAsync(terminalUi, "DEPENDENCIES", "VPM dependency restore completed.");
                 return ExitCodes.Success;
             }
             return ExitCodes.DependencyRestoreFailed;
@@ -288,39 +273,39 @@ public sealed class VrcliApplication(
         Add(startInfo, "-batchmode");
         Add(startInfo, "-accept-apiupdate");
         Add(startInfo, "-projectPath", options.ProjectPath);
-        Add(startInfo, "-buildTarget", options.Platform == VrcliPlatform.Android ? "Android" : "Win64");
-        Add(startInfo, "-executeMethod", "KibaLab.VRCLI.Editor.VrcliEntryPoint.Run");
+        Add(startInfo, "-buildTarget", options.Platform == BuildPlatform.Android ? "Android" : "Win64");
+        Add(startInfo, "-executeMethod", "KibaLab.WorldDeployment.Editor.DeploymentEntryPoint.Run");
         Add(startInfo, "-logFile", "-");
 
-        startInfo.Environment["VRCLI_BLUEPRINT_ID"] = options.BlueprintId;
-        startInfo.Environment["VRCLI_CREATE_WORLD"] = options.CreateWorld ? "true" : "false";
-        startInfo.Environment["VRCLI_USERNAME"] = options.Username;
-        startInfo.Environment["VRCLI_PASSWORD"] = options.Password;
+        startInfo.Environment[DeploymentEnvironment.BlueprintId] = options.BlueprintId;
+        startInfo.Environment[DeploymentEnvironment.IsNew] = options.IsNew ? "true" : "false";
+        startInfo.Environment[DeploymentEnvironment.Username] = options.Username;
+        startInfo.Environment[DeploymentEnvironment.Password] = options.Password;
         if (!string.IsNullOrWhiteSpace(options.TwoFactorCode))
-            startInfo.Environment["VRCLI_TWO_FACTOR_CODE"] = options.TwoFactorCode;
+            startInfo.Environment[DeploymentEnvironment.TwoFactorCode] = options.TwoFactorCode;
         if (!string.IsNullOrWhiteSpace(options.TotpSecret))
-            startInfo.Environment["VRCLI_TOTP_SECRET"] = options.TotpSecret;
+            startInfo.Environment[DeploymentEnvironment.TotpSecret] = options.TotpSecret;
         if (!string.IsNullOrWhiteSpace(twoFactorPipe))
-            startInfo.Environment["VRCLI_TWO_FACTOR_PIPE"] = twoFactorPipe;
-        startInfo.Environment["VRCLI_PLATFORM"] = options.Platform.ToString();
-        startInfo.Environment["VRCLI_RESULT_FILE"] = resultFile;
-        startInfo.Environment["VRCLI_ACCEPT_CONTENT_OWNERSHIP"] = options.AcceptContentOwnership ? "true" : "false";
-        if (scenePath != null) startInfo.Environment["VRCLI_SCENE"] = scenePath;
-        if (options.WorldName != null) startInfo.Environment["VRCLI_WORLD_NAME"] = options.WorldName;
-        if (options.WorldDescription != null) startInfo.Environment["VRCLI_WORLD_DESCRIPTION"] = options.WorldDescription;
-        if (options.ThumbnailPath != null) startInfo.Environment["VRCLI_THUMBNAIL"] = options.ThumbnailPath;
-        if (options.CreateWorld || options.CapacitySpecified)
-            startInfo.Environment["VRCLI_CAPACITY"] = options.Capacity.ToString(CultureInfo.InvariantCulture);
-        if (options.CreateWorld || options.RecommendedCapacitySpecified)
-            startInfo.Environment["VRCLI_RECOMMENDED_CAPACITY"] = options.RecommendedCapacity.ToString(CultureInfo.InvariantCulture);
-        if (options.CreateWorld || options.TagsSpecified)
-            startInfo.Environment["VRCLI_WORLD_TAGS"] = string.Join("|", options.Tags);
-        startInfo.Environment["VRCLI_UPDATE_WORLD_NAME"] = !options.CreateWorld && options.WorldName != null ? "true" : "false";
-        startInfo.Environment["VRCLI_UPDATE_WORLD_DESCRIPTION"] = !options.CreateWorld && options.WorldDescription != null ? "true" : "false";
-        startInfo.Environment["VRCLI_UPDATE_THUMBNAIL"] = !options.CreateWorld && options.ThumbnailPath != null ? "true" : "false";
-        startInfo.Environment["VRCLI_UPDATE_CAPACITY"] = !options.CreateWorld && options.CapacitySpecified ? "true" : "false";
-        startInfo.Environment["VRCLI_UPDATE_RECOMMENDED_CAPACITY"] = !options.CreateWorld && options.RecommendedCapacitySpecified ? "true" : "false";
-        startInfo.Environment["VRCLI_UPDATE_WORLD_TAGS"] = !options.CreateWorld && options.TagsSpecified ? "true" : "false";
+            startInfo.Environment[DeploymentEnvironment.TwoFactorPipe] = twoFactorPipe;
+        startInfo.Environment[DeploymentEnvironment.Platform] = options.Platform.ToString();
+        startInfo.Environment[DeploymentEnvironment.ResultFile] = resultFile;
+        startInfo.Environment[DeploymentEnvironment.OwnershipAccepted] = options.OwnershipAccepted ? "true" : "false";
+        if (scenePath != null) startInfo.Environment[DeploymentEnvironment.Scene] = scenePath;
+        if (options.Title != null) startInfo.Environment[DeploymentEnvironment.Title] = options.Title;
+        if (options.Description != null) startInfo.Environment[DeploymentEnvironment.Description] = options.Description;
+        if (options.ThumbnailPath != null) startInfo.Environment[DeploymentEnvironment.Thumbnail] = options.ThumbnailPath;
+        if (options.IsNew || options.HasCapacity)
+            startInfo.Environment[DeploymentEnvironment.Capacity] = options.Capacity.ToString(CultureInfo.InvariantCulture);
+        if (options.IsNew || options.HasRecommendedCapacity)
+            startInfo.Environment[DeploymentEnvironment.RecommendedCapacity] = options.RecommendedCapacity.ToString(CultureInfo.InvariantCulture);
+        if (options.IsNew || options.HasTags)
+            startInfo.Environment[DeploymentEnvironment.Tags] = string.Join("|", options.Tags);
+        startInfo.Environment[DeploymentEnvironment.UpdateTitle] = !options.IsNew && options.Title != null ? "true" : "false";
+        startInfo.Environment[DeploymentEnvironment.UpdateDescription] = !options.IsNew && options.Description != null ? "true" : "false";
+        startInfo.Environment[DeploymentEnvironment.UpdateThumbnail] = !options.IsNew && options.ThumbnailPath != null ? "true" : "false";
+        startInfo.Environment[DeploymentEnvironment.UpdateCapacity] = !options.IsNew && options.HasCapacity ? "true" : "false";
+        startInfo.Environment[DeploymentEnvironment.UpdateRecommendedCapacity] = !options.IsNew && options.HasRecommendedCapacity ? "true" : "false";
+        startInfo.Environment[DeploymentEnvironment.UpdateTags] = !options.IsNew && options.HasTags ? "true" : "false";
         return startInfo;
     }
 
@@ -329,11 +314,26 @@ public sealed class VrcliApplication(
         foreach (string value in values) startInfo.ArgumentList.Add(value);
     }
 
-    private static async Task<VrcliResult?> ReadResultAsync(string resultFile)
+    private Task ReportAsync(
+        TerminalProgressRenderer? terminalUi,
+        string area,
+        string message,
+        bool startsPhase = false)
+    {
+        if (terminalUi != null)
+        {
+            terminalUi.Report(area, message, startsPhase);
+            return Task.CompletedTask;
+        }
+
+        return output.WriteLineAsync($"[VRCLI][{area}] {message}");
+    }
+
+    private static async Task<DeploymentResult?> ReadResultAsync(string resultFile)
     {
         if (!File.Exists(resultFile)) return null;
         await using FileStream stream = File.OpenRead(resultFile);
-        return await JsonSerializer.DeserializeAsync<VrcliResult>(stream);
+        return await JsonSerializer.DeserializeAsync<DeploymentResult>(stream);
     }
 
     public const string HelpText = """
@@ -365,7 +365,7 @@ VRCLI parameters
 """;
 }
 
-public sealed record VrcliResult(
+public sealed record DeploymentResult(
     bool Success,
     int ExitCode,
     string? WorldId,

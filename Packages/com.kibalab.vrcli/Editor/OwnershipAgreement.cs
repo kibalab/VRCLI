@@ -5,9 +5,9 @@ using System.Threading.Tasks;
 using UnityEditor;
 using VRC.SDKBase.Editor.Api;
 
-namespace KibaLab.VRCLI.Editor
+namespace KibaLab.WorldDeployment.Editor
 {
-    internal static class VrcliOwnershipAgreement
+    internal static class OwnershipAgreement
     {
         private const int Version = 1;
         private const string AgreementCode = "content.copyright.owned";
@@ -15,10 +15,10 @@ namespace KibaLab.VRCLI.Editor
 
         public static async Task AcceptForNewContentAsync(string contentId, bool accepted)
         {
-            VrcliLog.Phase("OWNERSHIP", "Recording content ownership consent for the new world.");
+            DeploymentLog.Phase("OWNERSHIP", "Recording content ownership consent for the new world.");
             if (!accepted)
             {
-                throw new VrcliOwnershipException("Creating a world requires --yes to certify that you have the rights to upload its content.");
+                throw new ContentOwnershipException("Creating a world requires --yes to certify that you have the rights to upload its content.");
             }
 
             // A provisional new-world ID has no world record yet, so checking first
@@ -33,15 +33,15 @@ namespace KibaLab.VRCLI.Editor
             });
             if (result.ContentId != contentId || result.AgreementCode != AgreementCode || result.Version != Version)
             {
-                throw new VrcliOwnershipException("VRChat rejected the content ownership consent for the new world.");
+                throw new ContentOwnershipException("VRChat rejected the content ownership consent for the new world.");
             }
             MarkSessionAccepted(contentId);
-            VrcliLog.Info("OWNERSHIP", "Content ownership consent version " + Version + " was accepted.");
+            DeploymentLog.Info("OWNERSHIP", "Content ownership consent version " + Version + " was accepted.");
         }
 
         public static async Task EnsureAsync(string contentId, bool acceptWhenMissing)
         {
-            VrcliLog.Phase("OWNERSHIP", "Checking content ownership consent.");
+            DeploymentLog.Phase("OWNERSHIP", "Checking content ownership consent.");
             VRCAgreementCheckResponse check = await VRCApi.CheckContentUploadConsent(new VRCAgreementCheckRequest
             {
                 AgreementCode = AgreementCode,
@@ -53,7 +53,7 @@ namespace KibaLab.VRCLI.Editor
             {
                 if (!acceptWhenMissing)
                 {
-                    throw new VrcliOwnershipException("Content ownership consent is missing. Re-run with --yes to certify that you have the rights to upload this world.");
+                    throw new ContentOwnershipException("Content ownership consent is missing. Re-run with --yes to certify that you have the rights to upload this world.");
                 }
 
                 VRCAgreement result = await VRCApi.ContentUploadConsent(new VRCAgreement
@@ -66,13 +66,13 @@ namespace KibaLab.VRCLI.Editor
 
                 if (result.ContentId != contentId || result.AgreementCode != AgreementCode || result.Version != Version)
                 {
-                    throw new VrcliOwnershipException("VRChat rejected the content ownership consent.");
+                    throw new ContentOwnershipException("VRChat rejected the content ownership consent.");
                 }
-                VrcliLog.Info("OWNERSHIP", "Missing consent was accepted and recorded.");
+                DeploymentLog.Info("OWNERSHIP", "Missing consent was accepted and recorded.");
             }
             else
             {
-                VrcliLog.Info("OWNERSHIP", "Existing content ownership consent is valid.");
+                DeploymentLog.Info("OWNERSHIP", "Existing content ownership consent is valid.");
             }
 
             MarkSessionAccepted(contentId);

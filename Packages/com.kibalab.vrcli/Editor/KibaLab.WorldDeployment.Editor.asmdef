@@ -1,6 +1,6 @@
 {
-  "name": "KibaLab.VRCLI.Editor",
-  "rootNamespace": "KibaLab.VRCLI.Editor",
+  "name": "KibaLab.WorldDeployment.Editor",
+  "rootNamespace": "KibaLab.WorldDeployment.Editor",
   "references": [
     "VRC.SDKBase",
     "VRC.SDKBase.Editor",

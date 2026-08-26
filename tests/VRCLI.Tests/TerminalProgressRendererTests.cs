@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
-using KibaLab.VRCLI;
+using KibaLab.WorldDeployment;
 
-namespace VRCLI.Tests;
+namespace WorldDeployment.Tests;
 
 public sealed class TerminalProgressRendererTests
 {

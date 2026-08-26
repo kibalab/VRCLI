@@ -3,12 +3,24 @@ using System.Globalization;
 using UnityEngine;
 using Stopwatch = System.Diagnostics.Stopwatch;
 
-namespace KibaLab.VRCLI.Editor
+namespace KibaLab.WorldDeployment.Editor
 {
-    internal static class VrcliLog
+    internal static class DeploymentLog
     {
-        public const string Version = "0.5.0";
         private static readonly Stopwatch Clock = new Stopwatch();
+        private static string version;
+
+        public static string Version
+        {
+            get
+            {
+                if (version != null) return version;
+                UnityEditor.PackageManager.PackageInfo package =
+                    UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(DeploymentLog).Assembly);
+                version = package != null ? package.version : "unknown";
+                return version;
+            }
+        }
 
         public static string CurrentPhase { get; private set; } = "BOOT";
 

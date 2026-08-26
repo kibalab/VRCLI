@@ -1,6 +1,6 @@
-using KibaLab.VRCLI;
+using KibaLab.WorldDeployment;
 
-namespace VRCLI.Tests;
+namespace WorldDeployment.Tests;
 
 public sealed class InteractiveDeployWizardTests
 {

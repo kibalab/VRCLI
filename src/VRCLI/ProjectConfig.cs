@@ -1,10 +1,18 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
-public sealed class VrcliProjectConfig
+public sealed class ProjectConfig
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
+    };
+
     public string? Project { get; init; }
     public string? Blueprint { get; init; }
 
@@ -27,15 +35,10 @@ public sealed class VrcliProjectConfig
     public bool? Yes { get; init; }
     public bool? SkipVpmResolve { get; init; }
 
-    public static VrcliProjectConfig Load(string path)
+    public static ProjectConfig Load(string path)
     {
-        string json = File.ReadAllText(path);
-        return JsonSerializer.Deserialize<VrcliProjectConfig>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            ReadCommentHandling = JsonCommentHandling.Skip,
-            AllowTrailingCommas = true,
-            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
-        }) ?? throw new JsonException("The configuration file is empty.");
+        using FileStream stream = File.OpenRead(path);
+        return JsonSerializer.Deserialize<ProjectConfig>(stream, SerializerOptions) ??
+               throw new JsonException("The configuration file is empty.");
     }
 }

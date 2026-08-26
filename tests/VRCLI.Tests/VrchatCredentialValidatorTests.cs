@@ -1,8 +1,8 @@
 using System.Net;
 using System.Text;
-using KibaLab.VRCLI;
+using KibaLab.WorldDeployment;
 
-namespace VRCLI.Tests;
+namespace WorldDeployment.Tests;
 
 public sealed class VrchatCredentialValidatorTests
 {

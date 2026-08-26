@@ -1,15 +1,15 @@
-using KibaLab.VRCLI;
+using KibaLab.WorldDeployment;
 
-namespace VRCLI.Tests;
+namespace WorldDeployment.Tests;
 
-public sealed class VrcliProgressLineTests
+public sealed class ProgressLineTests
 {
     [Fact]
     public void ParsesPhaseMarkerAndUploadProgress()
     {
-        bool parsed = VrcliProgressLine.TryParse(
+        bool parsed = ProgressLine.TryParse(
             "[VRCLI][00:00:12.345][UPLOAD] ▶ bundle: Uploading 40.0% (overall 20.0%)",
-            out VrcliProgressLine? progress);
+            out ProgressLine? progress);
 
         Assert.True(parsed);
         Assert.NotNull(progress);
@@ -22,9 +22,9 @@ public sealed class VrcliProgressLineTests
     [Fact]
     public void FindsVrcliRecordAfterUnityPrefix()
     {
-        bool parsed = VrcliProgressLine.TryParse(
+        bool parsed = ProgressLine.TryParse(
             "Unity: [VRCLI][00:00:01.000][AUTH] Authentication succeeded.",
-            out VrcliProgressLine? progress);
+            out ProgressLine? progress);
 
         Assert.True(parsed);
         Assert.Equal("AUTH", progress?.Area);
@@ -33,6 +33,6 @@ public sealed class VrcliProgressLineTests
     [Fact]
     public void IgnoresOrdinaryUnityOutput()
     {
-        Assert.False(VrcliProgressLine.TryParse("AssetDatabase refresh completed", out _));
+        Assert.False(ProgressLine.TryParse("AssetDatabase refresh completed", out _));
     }
 }

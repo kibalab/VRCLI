@@ -19,16 +19,16 @@ using VRC.SDKBase;
 using VRC.SDKBase.Editor;
 using VRC.SDKBase.Editor.Api;
 
-namespace KibaLab.VRCLI.Editor
+namespace KibaLab.WorldDeployment.Editor
 {
-    internal static class VrcliAuthentication
+    internal static class Authentication
     {
         private static readonly Uri ApiRoot = new Uri("https://api.vrchat.cloud");
         private static readonly Uri CurrentUserEndpoint = new Uri(ApiRoot, "/api/1/auth/user");
 
-        public static async Task LoginAsync(VrcliRequest request)
+        public static async Task LoginAsync(DeploymentRequest request)
         {
-            VrcliLog.Phase("AUTH", "Initializing VRChat SDK authentication.");
+            DeploymentLog.Phase("AUTH", "Initializing VRChat SDK authentication.");
             API.SetOnlineMode(true);
             VRCSdkControlPanel.RefreshApiUrlSetting();
 
@@ -38,10 +38,10 @@ namespace KibaLab.VRCLI.Editor
                 ConfigManager.RemoteConfig.Init(() => configReady.TrySetResult(true));
                 await WithTimeout(configReady.Task, TimeSpan.FromMinutes(2), "VRChat remote configuration timed out.");
             }
-            VrcliLog.Info("AUTH", "VRChat remote configuration is ready.");
+            DeploymentLog.Info("AUTH", "VRChat remote configuration is ready.");
 
             if (await TryResumeSdkSessionAsync(request)) return;
-            VrcliLog.Info("AUTH", "No valid matching SDK session was found; starting credential login.");
+            DeploymentLog.Info("AUTH", "No valid matching SDK session was found; starting credential login.");
 
             CookieContainer cookies = new CookieContainer();
             string currentUserJson;
@@ -68,18 +68,18 @@ namespace KibaLab.VRCLI.Editor
                 }
 
                 currentUserJson = await GetCurrentUserAsync(client);
-                VrcliLog.Info("AUTH", "Primary credentials were accepted by VRChat.");
+                DeploymentLog.Info("AUTH", "Primary credentials were accepted by VRChat.");
                 string[] methods = ReadTwoFactorMethods(currentUserJson);
                 if (methods.Length > 0)
                 {
-                    VrcliLog.Info("AUTH", "Two-factor authentication required: " + string.Join(", ", methods) + ".");
+                    DeploymentLog.Info("AUTH", "Two-factor authentication required: " + string.Join(", ", methods) + ".");
                     client.DefaultRequestHeaders.Authorization = null;
                     string twoFactorCode = request.TwoFactorCode;
                     if (!string.IsNullOrWhiteSpace(request.TotpSecret))
                     {
                         if (!methods.Contains("totp", StringComparer.OrdinalIgnoreCase))
                         {
-                            throw new VrcliAuthenticationException(
+                            throw new LoginException(
                                 "A TOTP secret was provided, but VRChat requested a different two-factor method (" +
                                 string.Join(", ", methods) + ").");
                         }
@@ -87,17 +87,17 @@ namespace KibaLab.VRCLI.Editor
                         await WaitForSafeTotpWindowAsync();
                         try
                         {
-                            twoFactorCode = VrcliTotpGenerator.GenerateCode(
+                            twoFactorCode = TotpGenerator.GenerateCode(
                                 request.TotpSecret,
                                 DateTimeOffset.UtcNow);
                         }
                         catch (ArgumentException exception)
                         {
-                            throw new VrcliAuthenticationException(
+                            throw new LoginException(
                                 "The TOTP secret is invalid: " + exception.Message);
                         }
                         methods = new[] { "totp" };
-                        VrcliLog.Info("AUTH", "Generated a time-based one-time code in memory; the value will not be logged.");
+                        DeploymentLog.Info("AUTH", "Generated a time-based one-time code in memory; the value will not be logged.");
                     }
 
                     if (string.IsNullOrWhiteSpace(twoFactorCode))
@@ -107,24 +107,24 @@ namespace KibaLab.VRCLI.Editor
                         {
                             twoFactorCode = interactive.Code;
                             methods = new[] { interactive.Method };
-                            VrcliLog.Info("AUTH", "Received interactive verification input; the value will not be logged.");
+                            DeploymentLog.Info("AUTH", "Received interactive verification input; the value will not be logged.");
                         }
                     }
 
                     if (string.IsNullOrWhiteSpace(twoFactorCode))
                     {
-                        throw new VrcliAuthenticationException(
+                        throw new LoginException(
                             "Two-factor authentication is required (" + string.Join(", ", methods) + "). " +
                             "Use interactive authentication or provide VRCLI_TWO_FACTOR_CODE/VRCLI_TOTP_SECRET.");
                     }
 
-                    VrcliLog.Info("AUTH", "Submitting two-factor verification using " + DescribeTwoFactorMethod(methods) + ".");
+                    DeploymentLog.Info("AUTH", "Submitting two-factor verification using " + DescribeTwoFactorMethod(methods) + ".");
                     await VerifyTwoFactorAsync(client, methods, twoFactorCode);
-                    VrcliLog.Info("AUTH", "Two-factor verification succeeded.");
+                    DeploymentLog.Info("AUTH", "Two-factor verification succeeded.");
                     currentUserJson = await GetCurrentUserAsync(client);
                     if (ReadTwoFactorMethods(currentUserJson).Length > 0)
                     {
-                        throw new VrcliAuthenticationException(
+                        throw new LoginException(
                             "VRChat still requires two-factor authentication after verification.");
                     }
                 }
@@ -134,7 +134,7 @@ namespace KibaLab.VRCLI.Editor
             Cookie auth = established["auth"];
             if (auth == null || string.IsNullOrWhiteSpace(auth.Value))
             {
-                throw new VrcliAuthenticationException("VRChat did not issue an authentication cookie.");
+                throw new LoginException("VRChat did not issue an authentication cookie.");
             }
 
             Cookie twoFactor = established["twoFactorAuth"];
@@ -145,13 +145,13 @@ namespace KibaLab.VRCLI.Editor
 
             APIUser authenticated = CreateCurrentUser(currentUserJson);
             CompleteLogin(authenticated);
-            VrcliLog.Info("AUTH", "Saved the refreshed VRChat SDK session for future deployments.");
+            DeploymentLog.Info("AUTH", "Saved the refreshed VRChat SDK session for future deployments.");
             LogAuthenticatedUser(authenticated, "credential login");
         }
 
-        private static async Task<bool> TryResumeSdkSessionAsync(VrcliRequest request)
+        private static async Task<bool> TryResumeSdkSessionAsync(DeploymentRequest request)
         {
-            VrcliLog.Info("AUTH", "Checking for a saved VRChat SDK session.");
+            DeploymentLog.Info("AUTH", "Checking for a saved VRChat SDK session.");
             if (!ApiCredentials.Load() ||
                 !string.Equals(ApiCredentials.GetHumanName(), request.Username, StringComparison.OrdinalIgnoreCase))
                 return false;
@@ -184,17 +184,17 @@ namespace KibaLab.VRCLI.Editor
                     return true;
                 }
             }
-            catch (VrcliAuthenticationException)
+            catch (LoginException)
             {
-                VrcliLog.Info("AUTH", "The saved SDK session is no longer valid.");
+                DeploymentLog.Info("AUTH", "The saved SDK session is no longer valid.");
                 return false;
             }
         }
 
         private static void LogAuthenticatedUser(APIUser user, string method)
         {
-            VrcliLog.Info("AUTH", "Authentication succeeded via " + method + ".");
-            VrcliLog.Info("AUTH", "Publish permission confirmed for " + user.displayName + " (" + user.id + ").");
+            DeploymentLog.Info("AUTH", "Authentication succeeded via " + method + ".");
+            DeploymentLog.Info("AUTH", "Publish permission confirmed for " + user.displayName + " (" + user.id + ").");
         }
 
         private static string DescribeTwoFactorMethod(string[] methods)
@@ -221,7 +221,7 @@ namespace KibaLab.VRCLI.Editor
             {
                 string body = await response.Content.ReadAsStringAsync();
                 if (!response.IsSuccessStatusCode)
-                    throw new VrcliAuthenticationException(ReadApiError(body, response.StatusCode));
+                    throw new LoginException(ReadApiError(body, response.StatusCode));
                 return body;
             }
         }
@@ -240,7 +240,7 @@ namespace KibaLab.VRCLI.Editor
             }
             catch (JsonException exception)
             {
-                throw new VrcliAuthenticationException(
+                throw new LoginException(
                     "VRChat returned an invalid authentication response: " + exception.Message);
             }
         }
@@ -255,7 +255,7 @@ namespace KibaLab.VRCLI.Editor
             else if (methods.Contains("otp", StringComparer.OrdinalIgnoreCase))
                 endpoint = "/api/1/auth/twofactorauth/otp/verify";
             else
-                throw new VrcliAuthenticationException(
+                throw new LoginException(
                     "VRChat requested an unsupported two-factor authentication method: " +
                     string.Join(", ", methods));
 
@@ -265,7 +265,7 @@ namespace KibaLab.VRCLI.Editor
             {
                 string body = await response.Content.ReadAsStringAsync();
                 if (!response.IsSuccessStatusCode)
-                    throw new VrcliAuthenticationException(ReadApiError(body, response.StatusCode));
+                    throw new LoginException(ReadApiError(body, response.StatusCode));
             }
         }
 
@@ -275,17 +275,17 @@ namespace KibaLab.VRCLI.Editor
             int remaining = 30 - (int)(seconds % 30);
             if (remaining <= 3)
             {
-                VrcliLog.Info("AUTH", "The current TOTP window is about to expire; waiting for the next window.");
+                DeploymentLog.Info("AUTH", "The current TOTP window is about to expire; waiting for the next window.");
                 await Task.Delay(TimeSpan.FromSeconds(remaining + 1));
             }
         }
 
         private static InteractiveTwoFactorResponse RequestInteractiveTwoFactor(string[] methods)
         {
-            string pipeName = Environment.GetEnvironmentVariable("VRCLI_TWO_FACTOR_PIPE");
+            string pipeName = Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorPipe);
             if (string.IsNullOrWhiteSpace(pipeName)) return null;
 
-            VrcliLog.Info("AUTH", "Waiting for an interactive two-factor response.");
+            DeploymentLog.Info("AUTH", "Waiting for an interactive two-factor response.");
             try
             {
                 using (NamedPipeClientStream pipe = new NamedPipeClientStream(
@@ -310,7 +310,7 @@ namespace KibaLab.VRCLI.Editor
                         if (response == null || string.IsNullOrWhiteSpace(response.Code) ||
                             !methods.Contains(response.Method, StringComparer.OrdinalIgnoreCase))
                         {
-                            throw new VrcliAuthenticationException("Interactive two-factor authentication was cancelled or invalid.");
+                            throw new LoginException("Interactive two-factor authentication was cancelled or invalid.");
                         }
                         return response;
                     }
@@ -318,12 +318,12 @@ namespace KibaLab.VRCLI.Editor
             }
             catch (IOException exception)
             {
-                throw new VrcliAuthenticationException(
+                throw new LoginException(
                     "Unable to communicate with the interactive two-factor prompt: " + exception.Message);
             }
             catch (TimeoutException)
             {
-                throw new VrcliAuthenticationException("Timed out while opening the interactive two-factor prompt.");
+                throw new LoginException("Timed out while opening the interactive two-factor prompt.");
             }
         }
 
@@ -347,7 +347,7 @@ namespace KibaLab.VRCLI.Editor
             Json.JObject fields = token.TryGetObject();
             if (fields == null)
             {
-                throw new VrcliAuthenticationException("VRChat returned invalid current-user JSON.");
+                throw new LoginException("VRChat returned invalid current-user JSON.");
             }
 
             APIUser user = new APIUser();
@@ -355,7 +355,7 @@ namespace KibaLab.VRCLI.Editor
             IReadOnlyDictionary<string, Json.Token> apiFields = fields;
             if (!user.SetApiFieldsFromJson(apiFields, ref parseError))
             {
-                throw new VrcliAuthenticationException(
+                throw new LoginException(
                     string.IsNullOrWhiteSpace(parseError)
                         ? "VRChat current-user data could not be parsed by the SDK."
                         : parseError);
@@ -367,7 +367,7 @@ namespace KibaLab.VRCLI.Editor
             MethodInfo setter = currentUser != null ? currentUser.GetSetMethod(true) : null;
             if (setter == null)
             {
-                throw new VrcliAuthenticationException("This VRChat SDK does not expose its current-user session field.");
+                throw new LoginException("This VRChat SDK does not expose its current-user session field.");
             }
             setter.Invoke(null, new object[] { user });
             return user;
@@ -375,15 +375,15 @@ namespace KibaLab.VRCLI.Editor
 
         private static void CompleteLogin(APIUser user)
         {
-            if (user == null) throw new VrcliAuthenticationException("VRChat returned an empty user.");
+            if (user == null) throw new LoginException("VRChat returned an empty user.");
             AnalyticsSDK.LoggedInUserChanged(user);
             if (!APIUser.IsLoggedIn || APIUser.CurrentUser == null)
             {
-                throw new VrcliAuthenticationException("VRChat did not establish a logged-in SDK session.");
+                throw new LoginException("VRChat did not establish a logged-in SDK session.");
             }
             if (!APIUser.CurrentUser.canPublishWorldsAndAvatars)
             {
-                throw new VrcliAuthenticationException("This VRChat account cannot publish worlds and avatars.");
+                throw new LoginException("This VRChat account cannot publish worlds and avatars.");
             }
         }
 

@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace KibaLab.VRCLI;
+namespace KibaLab.WorldDeployment;
 
 public sealed record InteractiveWizardResult(
     string[] Arguments,
@@ -38,11 +38,11 @@ public static class InteractiveDeployWizard
             string username = PromptRequired("VRChat username or account email");
             Dictionary<string, string> temporarySecrets = new(StringComparer.Ordinal);
             string password;
-            string? configuredPassword = Environment.GetEnvironmentVariable("VRCLI_PASSWORD");
+            string? configuredPassword = Environment.GetEnvironmentVariable(DeploymentEnvironment.Password);
             if (string.IsNullOrEmpty(configuredPassword))
             {
                 password = PromptSecret("VRChat password", required: true)!;
-                temporarySecrets["VRCLI_PASSWORD"] = password;
+                temporarySecrets[DeploymentEnvironment.Password] = password;
             }
             else
             {
@@ -73,7 +73,7 @@ public static class InteractiveDeployWizard
             else
                 Console.WriteLine("  │  " + Paint("✓", "32;1") + " " + validationMessage);
 
-            bool hasTotpSecret = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("VRCLI_TOTP_SECRET"));
+            bool hasTotpSecret = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(DeploymentEnvironment.TotpSecret));
             string authenticationDescription = hasTotpSecret
                 ? "saved session → automatic TOTP only if requested"
                 : "saved session → ask only if VRChat requests verification";

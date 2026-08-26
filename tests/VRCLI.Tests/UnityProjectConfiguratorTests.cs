@@ -1,7 +1,7 @@
 using System.Text;
-using KibaLab.VRCLI;
+using KibaLab.WorldDeployment;
 
-namespace VRCLI.Tests;
+namespace WorldDeployment.Tests;
 
 public sealed class UnityProjectConfiguratorTests : IDisposable
 {
@@ -16,10 +16,10 @@ public sealed class UnityProjectConfiguratorTests : IDisposable
 
         UnityProjectConfigurationResult first = UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(
             projectPath,
-            VrcliPlatform.StandaloneWindows64);
+            BuildPlatform.StandaloneWindows64);
         UnityProjectConfigurationResult second = UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(
             projectPath,
-            VrcliPlatform.StandaloneWindows64);
+            BuildPlatform.StandaloneWindows64);
 
         string settings = File.ReadAllText(SettingsPath);
         Assert.True(first.Changed);
@@ -40,7 +40,7 @@ public sealed class UnityProjectConfiguratorTests : IDisposable
 
         UnityProjectConfigurationResult result = UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(
             projectPath,
-            VrcliPlatform.Android);
+            BuildPlatform.Android);
 
         string settings = File.ReadAllText(SettingsPath);
         Assert.True(result.Changed);
@@ -56,7 +56,7 @@ public sealed class UnityProjectConfiguratorTests : IDisposable
         File.WriteAllText(SettingsPath, "  scriptingDefineSymbols: {}\n");
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-            UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(projectPath, VrcliPlatform.Android));
+            UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(projectPath, BuildPlatform.Android));
 
         Assert.Contains("VRChat Worlds SDK", exception.Message);
     }
