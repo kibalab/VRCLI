@@ -42,14 +42,9 @@ namespace KibaLab.WorldDeployment.Editor
         public static async Task EnsureAsync(string contentId, bool acceptWhenMissing)
         {
             DeploymentLog.Phase("OWNERSHIP", "Checking content ownership consent.");
-            VRCAgreementCheckResponse check = await VRCApi.CheckContentUploadConsent(new VRCAgreementCheckRequest
-            {
-                AgreementCode = AgreementCode,
-                ContentId = contentId,
-                Version = Version
-            });
+            bool agreed = await CheckAsync(contentId);
 
-            if (!check.Agreed)
+            if (!agreed)
             {
                 if (!acceptWhenMissing)
                 {
@@ -76,6 +71,17 @@ namespace KibaLab.WorldDeployment.Editor
             }
 
             MarkSessionAccepted(contentId);
+        }
+
+        public static async Task<bool> CheckAsync(string contentId)
+        {
+            VRCAgreementCheckResponse check = await VRCApi.CheckContentUploadConsent(new VRCAgreementCheckRequest
+            {
+                AgreementCode = AgreementCode,
+                ContentId = contentId,
+                Version = Version
+            });
+            return check.Agreed;
         }
 
         private static void MarkSessionAccepted(string contentId)

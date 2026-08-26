@@ -4,7 +4,7 @@ namespace KibaLab.WorldDeployment;
 
 public static partial class ProjectInspector
 {
-    public static ProjectInspectionResult Inspect(string projectPath, string? scenePath)
+    public static ProjectInspectionResult Inspect(string projectPath, string? scenePath, bool requireScene = true)
     {
         if (!Directory.Exists(projectPath))
         {
@@ -50,7 +50,7 @@ public static partial class ProjectInspector
                 return ProjectInspectionResult.Failure($"Scene does not exist: {normalizedScene}");
             }
         }
-        else
+        else if (requireScene)
         {
             try
             {

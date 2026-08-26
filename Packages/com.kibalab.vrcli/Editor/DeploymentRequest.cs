@@ -8,6 +8,7 @@ namespace KibaLab.WorldDeployment.Editor
     {
         private static readonly char[] TagSeparators = { '|' };
 
+        public RequestOperation Operation { get; private set; }
         public string BlueprintId { get; private set; }
         public bool IsNew { get; private set; }
         public string Title { get; private set; }
@@ -38,7 +39,8 @@ namespace KibaLab.WorldDeployment.Editor
         {
             DeploymentRequest request = new DeploymentRequest
             {
-                BlueprintId = Require(DeploymentEnvironment.BlueprintId),
+                Operation = ReadOperation(),
+                BlueprintId = Environment.GetEnvironmentVariable(DeploymentEnvironment.BlueprintId) ?? string.Empty,
                 IsNew = ReadBoolean(DeploymentEnvironment.IsNew),
                 Username = Require(DeploymentEnvironment.Username),
                 Password = Require(DeploymentEnvironment.Password),
@@ -52,6 +54,11 @@ namespace KibaLab.WorldDeployment.Editor
                     "true",
                     StringComparison.OrdinalIgnoreCase)
             };
+
+            if (request.Operation != RequestOperation.Check && string.IsNullOrWhiteSpace(request.BlueprintId))
+                throw new ArgumentException("VRCLI_BLUEPRINT_ID is missing.");
+            if (request.Operation != RequestOperation.Deploy && request.IsNew)
+                throw new ArgumentException("VRCLI_CREATE_WORLD is only valid for deployment.");
 
             if (request.IsNew)
             {
@@ -68,7 +75,7 @@ namespace KibaLab.WorldDeployment.Editor
                     throw new ArgumentException("VRCLI_RECOMMENDED_CAPACITY must be from 1 to VRCLI_CAPACITY.");
                 }
             }
-            else
+            else if (request.Operation != RequestOperation.Check)
             {
                 request.UpdateTitle = ReadBoolean(DeploymentEnvironment.UpdateTitle);
                 request.UpdateDescription = ReadBoolean(DeploymentEnvironment.UpdateDescription);
@@ -100,6 +107,15 @@ namespace KibaLab.WorldDeployment.Editor
             }
 
             return request;
+        }
+
+        private static RequestOperation ReadOperation()
+        {
+            string value = Require(DeploymentEnvironment.Operation);
+            RequestOperation operation;
+            if (!Enum.TryParse(value, true, out operation))
+                throw new ArgumentException("VRCLI_OPERATION must be Deploy, Meta, or Check.");
+            return operation;
         }
 
         private static bool ReadBoolean(string name)
@@ -141,5 +157,12 @@ namespace KibaLab.WorldDeployment.Editor
             }
             return value;
         }
+    }
+
+    internal enum RequestOperation
+    {
+        Deploy,
+        Meta,
+        Check
     }
 }

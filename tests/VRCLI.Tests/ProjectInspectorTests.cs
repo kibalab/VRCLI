@@ -7,6 +7,17 @@ public sealed class ProjectInspectorTests : IDisposable
     private readonly string projectPath = Path.Combine(Path.GetTempPath(), "vrcli-tests-" + Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void MetadataInspectionDoesNotRequireAScene()
+    {
+        CreateProject();
+
+        ProjectInspectionResult result = ProjectInspector.Inspect(projectPath, null, requireScene: false);
+
+        Assert.True(result.IsValid, result.Error);
+        Assert.Null(result.ScenePath);
+    }
+
+    [Fact]
     public void ReadsUnityVersionAndNormalizesScene()
     {
         CreateProject();

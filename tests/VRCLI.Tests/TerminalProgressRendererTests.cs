@@ -6,6 +6,22 @@ namespace WorldDeployment.Tests;
 public sealed class TerminalProgressRendererTests
 {
     [Fact]
+    public async Task RendersCheckSpecificWorkflow()
+    {
+        StringWriter output = new();
+        TerminalProgressRenderer renderer = new(output, OperationMode.Check, () => (100, 40));
+        renderer.Start();
+        renderer.Report("CHECK", "No blocking SDK issues", true);
+        string screen = CaptureScreen(output.ToString());
+        await renderer.FinishAsync(true);
+
+        Assert.Contains("PREFLIGHT CHECK", screen);
+        Assert.Contains("Preflight report", screen);
+        Assert.DoesNotContain("Bundle signature", screen);
+        Assert.Contains("Preflight check passed", output.ToString());
+    }
+
+    [Fact]
     public async Task RendersStagesContextAndProgressBar()
     {
         StringWriter output = new();

@@ -38,7 +38,10 @@ public sealed class DeploymentApplication(
             return ExitCodes.ProjectInvalid;
         }
 
-        ProjectInspectionResult project = ProjectInspector.Inspect(options.ProjectPath, options.ScenePath);
+        ProjectInspectionResult project = ProjectInspector.Inspect(
+            options.ProjectPath,
+            options.ScenePath,
+            requireScene: options.Operation != OperationMode.Meta);
         if (!project.IsValid)
         {
             await error.WriteLineAsync("VRCLI: " + project.Error);
@@ -61,16 +64,18 @@ public sealed class DeploymentApplication(
         TerminalProgressRenderer? terminalUi = null;
         if (TerminalProgressRenderer.ShouldUse(options.TerminalMode, options.Verbose))
         {
-            terminalUi = new TerminalProgressRenderer(output, cancellationToken: cancellationToken);
+            terminalUi = new TerminalProgressRenderer(output, options.Operation, cancellationToken: cancellationToken);
             string projectName = Path.GetFileName(options.ProjectPath.TrimEnd(
                 Path.DirectorySeparatorChar,
                 Path.AltDirectorySeparatorChar));
-            string targetName = options.IsNew ? "New world · " + options.Title : options.BlueprintId;
+            string targetName = options.IsNew
+                ? "New world · " + options.Title
+                : string.IsNullOrWhiteSpace(options.BlueprintId) ? "Scene Blueprint" : options.BlueprintId;
             terminalUi.SetOverview(
                 projectName,
                 targetName,
-                project.ScenePath ?? "First enabled build scene",
-                options.Platform.ToString());
+                options.Operation == OperationMode.Meta ? "Not required" : project.ScenePath ?? "First enabled build scene",
+                options.Operation == OperationMode.Meta ? "Not applicable" : options.Platform.ToString());
         }
         if (options.InteractiveTwoFactor && (terminalUi == null || Console.IsInputRedirected))
         {
@@ -83,7 +88,7 @@ public sealed class DeploymentApplication(
         {
             terminalUi.Start();
         }
-        await ReportAsync(terminalUi, "BOOT", "Deployment request validated; preparing dependencies and Unity bridge.", true);
+        await ReportAsync(terminalUi, "BOOT", options.Operation + " request validated; preparing dependencies and Unity bridge.", true);
 
         if (!options.SkipVpmResolve)
         {
@@ -153,6 +158,12 @@ public sealed class DeploymentApplication(
                 project.ScenePath,
                 resultFile,
                 twoFactorServer?.PipeName);
+            CompilerDiagnosticCollector? compilerDiagnostics = options.Operation == OperationMode.Check
+                ? new CompilerDiagnosticCollector(terminalUi)
+                : null;
+            IProcessLineObserver? processObserver = compilerDiagnostics != null
+                ? compilerDiagnostics
+                : terminalUi;
             ChildProcessResult result = await ChildProcess.RunAsync(
                 unity,
                 output,
@@ -160,7 +171,7 @@ public sealed class DeploymentApplication(
                 options.Timeout,
                 secrets,
                 cancellationToken,
-                terminalUi);
+                processObserver);
             if (result.TimedOut)
             {
                 if (terminalUi != null) await terminalUi.FinishAsync(false);
@@ -169,6 +180,35 @@ public sealed class DeploymentApplication(
             }
 
             DeploymentResult? bridgeResult = await ReadResultAsync(resultFile);
+            if (options.Operation == OperationMode.Check && compilerDiagnostics != null)
+            {
+                string[] compilerErrors = compilerDiagnostics.Errors.ToArray();
+                string[] compilerWarnings = compilerDiagnostics.Warnings.ToArray();
+                if (bridgeResult == null && compilerErrors.Length > 0)
+                {
+                    bridgeResult = new DeploymentResult(
+                        false,
+                        ExitCodes.BuildFailed,
+                        string.IsNullOrWhiteSpace(options.BlueprintId) ? null : options.BlueprintId,
+                        false,
+                        options.Platform.ToString(),
+                        "compilation",
+                        "Unity compilation failed; SDK validation could not run.",
+                        null,
+                        null,
+                        null,
+                        compilerErrors,
+                        compilerWarnings);
+                }
+                else if (bridgeResult != null)
+                {
+                    bridgeResult = bridgeResult with
+                    {
+                        CompilerErrors = compilerErrors,
+                        CompilerWarnings = compilerWarnings
+                    };
+                }
+            }
             LastResult = bridgeResult;
             if (terminalUi != null) await terminalUi.FinishAsync(bridgeResult?.Success == true);
             if (bridgeResult != null)
@@ -278,6 +318,7 @@ public sealed class DeploymentApplication(
         Add(startInfo, "-logFile", "-");
 
         startInfo.Environment[DeploymentEnvironment.BlueprintId] = options.BlueprintId;
+        startInfo.Environment[DeploymentEnvironment.Operation] = options.Operation.ToString();
         startInfo.Environment[DeploymentEnvironment.IsNew] = options.IsNew ? "true" : "false";
         startInfo.Environment[DeploymentEnvironment.Username] = options.Username;
         startInfo.Environment[DeploymentEnvironment.Password] = options.Password;
@@ -337,31 +378,37 @@ public sealed class DeploymentApplication(
     }
 
     public const string HelpText = """
-VRCLI parameters
+VRCLI commands and parameters
 
-  --project <directory>          Unity project directory; default current directory
-  --blueprint <wrld_id>          Upload an existing world Blueprint
-  --new                          Create and upload a new private world
-  --scene <Assets/...unity>      Scene to build; auto-detected when unambiguous
-  --platform <platform>          StandaloneWindows64 or Android; default StandaloneWindows64
-  --login <username-or-email>    VRChat account; default VRCLI_USERNAME
-  --password <password>          Account password; default VRCLI_PASSWORD; visible in shell history
-  --title <name>                 World display name; required with --new
-  --description <text>           Set the world description
-  --thumbnail <image>            Required for a new world; replaces an existing thumbnail
-  --capacity <1+>                Set the maximum player capacity; new-world default 32
-  --recommended-capacity <1+>    Set the recommended player capacity; new-world default 16
-  --tag <tag>                    Repeatable; merged with existing tags when updating
-  --blueprint-output <file>      Save a newly generated wrld_ ID
-  --config <file>                Configuration file; default ./vrcli.json when present
-  --plain                        Append-only output for scripts and CI
-  --yes                          Certify content ownership when required
-  --tui                          Force the interactive terminal display
-  --unity <Unity.exe>            Override Unity executable discovery
-  --timeout <seconds>            Deployment timeout; default 3600
-  --skip-vpm-resolve             Do not resolve VPM dependencies
-  --verbose                      Print detailed logs
-  --help                         Show this parameter list
+  deploy                        Build and upload a world; default command when omitted
+  meta                          Update only an existing world's metadata
+  check                         Check Unity compilation and VRChat SDK upload readiness
+
+  --project <directory>         Unity project directory; default current directory
+  --blueprint <wrld_id>         Existing world; required by meta, optional ownership target for check
+  --new                         Create a private world; deploy only
+  --scene <Assets/...unity>     Scene to deploy or check; auto-detected when unambiguous
+  --platform <platform>         Deploy/check target: StandaloneWindows64 or Android; default StandaloneWindows64
+  --login <username-or-email>   VRChat account; default VRCLI_USERNAME
+  --password <password>         Account password; default VRCLI_PASSWORD; visible in shell history
+  --title <name>                World name; metadata option; required with --new
+  --description <text>          World description; metadata option
+  --thumbnail <image>           World image; metadata option; required with --new
+  --capacity <1+>               Maximum player capacity; metadata option; new-world default 32
+  --recommended-capacity <1+>   Recommended player capacity; metadata option; new-world default 16
+  --tag <tag>                   Repeatable metadata tag; merged into existing tags
+  --blueprint-output <file>     Save a newly generated wrld_ ID; deploy only
+  --two-factor-code <code>      Current VRChat two-factor code
+  --interactive-two-factor     Prompt only when VRChat requests two-factor authentication
+  --config <file>               Configuration file; default ./vrcli.json when present
+  --plain                       Append-only output for scripts and CI
+  --yes                         Certify content ownership when deployment requires it
+  --tui                         Force the interactive terminal display
+  --unity <Unity.exe>           Override Unity executable discovery
+  --timeout <seconds>           Operation timeout; default 3600
+  --skip-vpm-resolve            Do not resolve VPM dependencies
+  --verbose                     Print detailed logs
+  --help                        Show this parameter list
 """;
 }
 
@@ -372,4 +419,9 @@ public sealed record DeploymentResult(
     bool Created,
     string? Platform,
     string? Stage,
-    string? Message);
+    string? Message,
+    IReadOnlyList<string>? Errors = null,
+    IReadOnlyList<string>? Warnings = null,
+    IReadOnlyList<string>? Information = null,
+    IReadOnlyList<string>? CompilerErrors = null,
+    IReadOnlyList<string>? CompilerWarnings = null);

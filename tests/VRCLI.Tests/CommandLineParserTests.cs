@@ -5,6 +5,83 @@ namespace WorldDeployment.Tests;
 public sealed class CommandLineParserTests
 {
     [Fact]
+    public void ParsesMetadataOnlyCommand()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+        [
+            "meta",
+            "--blueprint", "wrld_example",
+            "--title", "Updated title",
+            "--capacity", "64",
+            "--login", "kibalab",
+            "--password", "secret",
+            "--plain"
+        ]);
+
+        Assert.Null(result.Error);
+        Assert.Equal(OperationMode.Meta, result.Options?.Operation);
+        Assert.Equal("wrld_example", result.Options?.BlueprintId);
+        Assert.Equal("Updated title", result.Options?.Title);
+        Assert.True(result.Options?.HasCapacity);
+        Assert.Null(result.Options?.ScenePath);
+    }
+
+    [Fact]
+    public void MetadataCommandRequiresAtLeastOneChange()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+        [
+            "meta",
+            "--blueprint", "wrld_example",
+            "--login", "kibalab",
+            "--password", "secret"
+        ]);
+
+        Assert.Contains("at least one metadata option", result.Error);
+    }
+
+    [Fact]
+    public void ParsesCheckCommandWithoutBlueprint()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+        [
+            "check",
+            "--scene", "Assets/Scenes/Main.unity",
+            "--platform", "Android",
+            "--login", "kibalab",
+            "--password", "secret",
+            "--plain"
+        ]);
+
+        Assert.Null(result.Error);
+        Assert.Equal(OperationMode.Check, result.Options?.Operation);
+        Assert.Equal(string.Empty, result.Options?.BlueprintId);
+        Assert.Equal(BuildPlatform.Android, result.Options?.Platform);
+    }
+
+    [Fact]
+    public void CheckCommandRejectsMetadataChanges()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+        [
+            "check",
+            "--title", "Should not change",
+            "--login", "kibalab",
+            "--password", "secret"
+        ]);
+
+        Assert.Contains("not valid with the check command", result.Error);
+    }
+
+    [Fact]
+    public void RejectsUnknownCommand()
+    {
+        ParseResult result = new CommandLineParser().Parse(["publish"]);
+
+        Assert.Contains("Expected deploy, meta, or check", result.Error);
+    }
+
+    [Fact]
     public void ParsesConcisePlainDeployment()
     {
         Environment.SetEnvironmentVariable("VRCLI_USERNAME", "kibalab");

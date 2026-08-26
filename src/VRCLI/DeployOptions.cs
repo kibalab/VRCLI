@@ -1,6 +1,7 @@
 namespace KibaLab.WorldDeployment;
 
 public sealed record DeployOptions(
+    OperationMode Operation,
     string ProjectPath,
     string BlueprintId,
     bool IsNew,
@@ -27,6 +28,13 @@ public sealed record DeployOptions(
     bool OwnershipAccepted,
     bool Verbose,
     TerminalMode TerminalMode);
+
+public enum OperationMode
+{
+    Deploy,
+    Meta,
+    Check
+}
 
 public enum BuildPlatform
 {

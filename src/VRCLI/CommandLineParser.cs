@@ -46,7 +46,21 @@ public sealed class CommandLineParser
             return ParseResult.Help();
         }
 
-        int index = string.Equals(args[0], "deploy", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        OperationMode operation;
+        int index;
+        if (TryParseOperation(args[0], out operation))
+        {
+            index = 1;
+        }
+        else if (args[0].StartsWith("--", StringComparison.Ordinal))
+        {
+            operation = OperationMode.Deploy;
+            index = 0;
+        }
+        else
+        {
+            return ParseResult.Failure($"Unknown command: {args[0]}. Expected deploy, meta, or check.");
+        }
         Dictionary<string, string?> values = new(StringComparer.OrdinalIgnoreCase);
         List<string> tags = new();
         bool hasTags = false;
@@ -144,7 +158,7 @@ public sealed class CommandLineParser
             return ParseResult.Failure("Set VRCLI_USERNAME or provide --login <username-or-email>.");
         }
 
-        if (isNew == !string.IsNullOrWhiteSpace(blueprint))
+        if (operation == OperationMode.Deploy && isNew == !string.IsNullOrWhiteSpace(blueprint))
         {
             return ParseResult.Failure(
                 "Choose one target: --blueprint <wrld_id>, --new, VRCLI_BLUEPRINT_ID, or a vrcli.json setting.");
@@ -153,6 +167,35 @@ public sealed class CommandLineParser
         string? title = Get(values, "title");
         string? description = Get(values, "description");
         string? thumbnailPath = Get(values, "thumbnail");
+        bool hasCapacity = values.ContainsKey("capacity");
+        bool hasRecommendedCapacity = values.ContainsKey("recommended-capacity");
+        bool hasMetadata = title != null || description != null || thumbnailPath != null ||
+                           hasCapacity || hasRecommendedCapacity || hasTags;
+
+        if (operation != OperationMode.Deploy && isNew)
+        {
+            return ParseResult.Failure($"--new is only valid with the deploy command.");
+        }
+        if (operation == OperationMode.Meta)
+        {
+            if (string.IsNullOrWhiteSpace(blueprint))
+                return ParseResult.Failure("The meta command requires --blueprint <wrld_id>.");
+            if (!hasMetadata)
+            {
+                return ParseResult.Failure(
+                    "The meta command requires at least one metadata option: --title, --description, " +
+                    "--thumbnail, --capacity, --recommended-capacity, or --tag.");
+            }
+        }
+        if (operation == OperationMode.Check && hasMetadata)
+        {
+            return ParseResult.Failure("World metadata options are not valid with the check command.");
+        }
+        if (operation != OperationMode.Deploy && values.ContainsKey("blueprint-output"))
+        {
+            return ParseResult.Failure("--blueprint-output is only valid with the deploy command.");
+        }
+
         if (isNew)
         {
             List<string> missingMetadata = new();
@@ -172,13 +215,12 @@ public sealed class CommandLineParser
             }
             blueprint = newBlueprintOverride ?? "wrld_" + Guid.NewGuid();
         }
-        if (!blueprint!.StartsWith("wrld_", StringComparison.Ordinal))
+        if (!string.IsNullOrWhiteSpace(blueprint) && !blueprint.StartsWith("wrld_", StringComparison.Ordinal))
         {
             return ParseResult.Failure("--blueprint must be a VRChat world ID beginning with 'wrld_'.");
         }
+        blueprint ??= string.Empty;
 
-        bool hasCapacity = values.ContainsKey("capacity");
-        bool hasRecommendedCapacity = values.ContainsKey("recommended-capacity");
         if (!TryParseCapacity(
                 Get(values, "capacity"),
                 Get(values, "recommended-capacity"),
@@ -244,6 +286,7 @@ public sealed class CommandLineParser
         }
 
         DeployOptions options = new(
+            operation,
             fullProjectPath,
             blueprint,
             isNew,
@@ -272,6 +315,27 @@ public sealed class CommandLineParser
             values.ContainsKey("tui") ? TerminalMode.Tui : values.ContainsKey("plain") ? TerminalMode.Plain : TerminalMode.Auto);
 
         return ParseResult.Success(options);
+    }
+
+    private static bool TryParseOperation(string value, out OperationMode operation)
+    {
+        if (string.Equals(value, "deploy", StringComparison.OrdinalIgnoreCase))
+        {
+            operation = OperationMode.Deploy;
+            return true;
+        }
+        if (string.Equals(value, "meta", StringComparison.OrdinalIgnoreCase))
+        {
+            operation = OperationMode.Meta;
+            return true;
+        }
+        if (string.Equals(value, "check", StringComparison.OrdinalIgnoreCase))
+        {
+            operation = OperationMode.Check;
+            return true;
+        }
+        operation = default;
+        return false;
     }
 
     private static bool TryApplyProjectConfig(

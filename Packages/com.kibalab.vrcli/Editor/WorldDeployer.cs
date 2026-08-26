@@ -66,13 +66,8 @@ namespace KibaLab.WorldDeployment.Editor
             else
             {
                 DeploymentLog.Phase("WORLD", "Fetching the existing VRChat world record.");
-                world = await VRCApi.GetWorld(request.BlueprintId, true);
-                if (string.IsNullOrWhiteSpace(world.ID)) throw new InvalidOperationException("VRChat did not return world data for " + request.BlueprintId + ".");
-                if (APIUser.CurrentUser == null || world.AuthorId != APIUser.CurrentUser.id)
-                {
-                    throw new ContentOwnershipException("The logged-in account does not own " + request.BlueprintId + ".");
-                }
-                ApplyExistingWorldMetadata(ref world, request);
+                world = await WorldMetadata.FetchOwnedAsync(request.BlueprintId);
+                WorldMetadata.Apply(ref world, request);
                 DeploymentLog.Info("WORLD", "World: " + world.Name + " (version " + world.Version + ")");
                 DeploymentLog.Info("WORLD", "Release status: " + world.ReleaseStatus);
                 DeploymentLog.Info("WORLD", "Capacity: " + world.RecommendedCapacity + " recommended / " + world.Capacity + " maximum");
@@ -189,57 +184,6 @@ namespace KibaLab.WorldDeployment.Editor
             return uploaded.ID;
         }
 
-        private static void ApplyExistingWorldMetadata(ref VRCWorld world, DeploymentRequest request)
-        {
-            if (request.UpdateThumbnail && !File.Exists(request.ThumbnailPath))
-                throw new FileNotFoundException("Replacement thumbnail was not found.", request.ThumbnailPath);
-
-            if (request.UpdateTitle)
-            {
-                world.Name = request.Title;
-                DeploymentLog.Info("WORLD", "Requested name update: " + world.Name);
-            }
-            if (request.UpdateDescription)
-            {
-                world.Description = request.Description ?? string.Empty;
-                DeploymentLog.Info("WORLD", "Requested description update (" + world.Description.Length + " characters).");
-            }
-            if (request.UpdateCapacity)
-            {
-                world.Capacity = request.Capacity;
-                DeploymentLog.Info("WORLD", "Requested maximum capacity update: " + world.Capacity);
-            }
-            if (request.UpdateRecommendedCapacity)
-            {
-                if (request.RecommendedCapacity > world.Capacity)
-                {
-                    throw new ArgumentException(
-                        "Recommended capacity " + request.RecommendedCapacity +
-                        " exceeds the effective maximum capacity " + world.Capacity + ".");
-                }
-                world.RecommendedCapacity = request.RecommendedCapacity;
-                DeploymentLog.Info("WORLD", "Requested recommended capacity update: " + world.RecommendedCapacity);
-            }
-            else if (request.UpdateCapacity && world.RecommendedCapacity > world.Capacity)
-            {
-                world.RecommendedCapacity = world.Capacity;
-                DeploymentLog.Info("WORLD", "Recommended capacity was clamped to the new maximum: " + world.RecommendedCapacity);
-            }
-            if (request.UpdateTags)
-            {
-                List<string> tags = world.Tags ?? new List<string>();
-                foreach (string tag in request.Tags)
-                {
-                    if (!tags.Contains(tag)) tags.Add(tag);
-                }
-                world.Tags = tags;
-                DeploymentLog.Info("WORLD", "Requested tags merged: " +
-                    (request.Tags.Length == 0 ? "no additions" : string.Join(", ", request.Tags)));
-            }
-            if (request.UpdateThumbnail)
-                DeploymentLog.Info("WORLD", "Requested thumbnail replacement: " + request.ThumbnailPath);
-        }
-
         private static void SynchronizeBuilderBlueprint(IVRCSdkWorldBuilderApi builder, string blueprintId)
         {
             FieldInfo lastBlueprint = builder.GetType().GetField(
@@ -286,13 +230,13 @@ namespace KibaLab.WorldDeployment.Editor
             return selected;
         }
 
-        private static void OpenScene(string scenePath)
+        internal static void OpenScene(string scenePath)
         {
             EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
             DeploymentLog.Info("PREPARE", "Opened build scene: " + scenePath);
         }
 
-        private static void ValidateActivePlatform(string requestedPlatform)
+        internal static void ValidateActivePlatform(string requestedPlatform)
         {
             BuildTarget expected = requestedPlatform == "Android" ? BuildTarget.Android : BuildTarget.StandaloneWindows64;
             if (EditorUserBuildSettings.activeBuildTarget != expected)
@@ -339,7 +283,7 @@ namespace KibaLab.WorldDeployment.Editor
             }
         }
 
-        private static async Task<IVRCSdkWorldBuilderApi> GetBuilderAsync()
+        internal static async Task<IVRCSdkWorldBuilderApi> GetBuilderAsync()
         {
             EditorWindow window = EditorWindow.GetWindow<VRCSdkControlPanel>(false, "VRChat SDK", false);
             window.Show();

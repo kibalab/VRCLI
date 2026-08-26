@@ -7,24 +7,7 @@ namespace KibaLab.WorldDeployment;
 public sealed class TerminalProgressRenderer : IProcessLineObserver
 {
     private static readonly string[] Spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    private static readonly string[] StageOrder =
-    [
-        "BOOT",
-        "DEPENDENCIES",
-        "BRIDGE",
-        "UNITY",
-        "AUTH",
-        "CONTEXT",
-        "PREPARE",
-        "WORLD",
-        "SDK",
-        "OWNERSHIP",
-        "BUILD",
-        "SIGNATURE",
-        "UPLOAD"
-    ];
-
-    private static readonly IReadOnlyDictionary<string, string> StageNames = new Dictionary<string, string>
+    private static readonly IReadOnlyDictionary<string, string> AllStageNames = new Dictionary<string, string>
     {
         ["BOOT"] = "Request validation",
         ["DEPENDENCIES"] = "VPM dependencies",
@@ -38,17 +21,18 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         ["OWNERSHIP"] = "Ownership consent",
         ["BUILD"] = "Validation and build",
         ["SIGNATURE"] = "Bundle signature",
-        ["UPLOAD"] = "Upload and server update"
+        ["UPLOAD"] = "Upload and server update",
+        ["CHECK"] = "Preflight report"
     };
 
     private readonly object gate = new();
     private readonly TextWriter output;
+    private readonly OperationMode operation;
+    private readonly string[] stageOrder;
+    private readonly IReadOnlyDictionary<string, string> stageNames;
     private readonly Func<(int Width, int Height)> terminalSize;
     private readonly CancellationToken cancellationToken;
-    private readonly Dictionary<string, StageState> stages = StageOrder.ToDictionary(
-        stage => stage,
-        _ => StageState.Pending,
-        StringComparer.Ordinal);
+    private readonly Dictionary<string, StageState> stages;
     private readonly Queue<string> activeDetails = new();
     private readonly Queue<string> recentErrors = new();
     private readonly CancellationTokenSource animationCancellation = new();
@@ -79,10 +63,37 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         TextWriter output,
         Func<(int Width, int Height)>? terminalSize = null,
         CancellationToken cancellationToken = default)
+        : this(output, OperationMode.Deploy, terminalSize, cancellationToken)
+    {
+    }
+
+    public TerminalProgressRenderer(
+        TextWriter output,
+        OperationMode operation,
+        Func<(int Width, int Height)>? terminalSize = null,
+        CancellationToken cancellationToken = default)
     {
         this.output = output;
+        this.operation = operation;
         this.terminalSize = terminalSize ?? ReadTerminalSize;
         this.cancellationToken = cancellationToken;
+        stageOrder = operation switch
+        {
+            OperationMode.Meta =>
+            ["BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "AUTH", "CONTEXT", "WORLD", "UPLOAD"],
+            OperationMode.Check =>
+            ["BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "AUTH", "CONTEXT", "PREPARE", "WORLD", "SDK", "CHECK"],
+            _ =>
+            ["BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "AUTH", "CONTEXT", "PREPARE", "WORLD", "SDK", "OWNERSHIP", "BUILD", "SIGNATURE", "UPLOAD"]
+        };
+        stageNames = AllStageNames;
+        stages = stageOrder.ToDictionary(stage => stage, _ => StageState.Pending, StringComparer.Ordinal);
+        lastMessage = operation switch
+        {
+            OperationMode.Meta => "Preparing metadata update",
+            OperationMode.Check => "Preparing preflight check",
+            _ => "Preparing deployment"
+        };
     }
 
     public static bool ShouldUse(TerminalMode mode, bool verbose)
@@ -326,11 +337,11 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
             string elapsed = FormatElapsed(Stopwatch.GetElapsedTime(deploymentStarted));
             if (success)
             {
-                output.WriteLine("  " + Paint("◆ Deployment complete", "32;1") + Paint("  " + elapsed, "90"));
+                output.WriteLine("  " + Paint("◆ " + CompletionLabel(true), "32;1") + Paint("  " + elapsed, "90"));
             }
             else
             {
-                output.WriteLine("  " + Paint("◆ Deployment failed", "31;1") + Paint("  " + elapsed, "90"));
+                output.WriteLine("  " + Paint("◆ " + CompletionLabel(false), "31;1") + Paint("  " + elapsed, "90"));
                 output.WriteLine(Paint("    " + Fit(lastMessage, 4), "31"));
                 if (recentErrors.Count > 0)
                 {
@@ -375,8 +386,8 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
 
             if (stages.ContainsKey(progress.Area))
             {
-                int incomingIndex = Array.IndexOf(StageOrder, progress.Area);
-                int activeIndex = activeStage == null ? -1 : Array.IndexOf(StageOrder, activeStage);
+                int incomingIndex = Array.IndexOf(stageOrder, progress.Area);
+                int activeIndex = activeStage == null ? -1 : Array.IndexOf(stageOrder, activeStage);
                 if (stages[progress.Area] == StageState.Complete && incomingIndex <= activeIndex) return;
 
                 if (activeStage != null && activeStage != progress.Area)
@@ -426,7 +437,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         (int width, int height) = CurrentSize();
         List<string> lines = [];
         string elapsed = FormatElapsed(Stopwatch.GetElapsedTime(deploymentStarted));
-        lines.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  WORLD DEPLOY", "90;1") +
+        lines.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  " + OperationTitle(), "90;1") +
                   AlignRight(Paint(elapsed, "90"), width - 2, 24));
         lines.Add(Paint(" " + new string('─', width - 2), "90"));
 
@@ -450,7 +461,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         }
         else
         {
-            lines.Add(Paint(" Build, sign, and publish a VRChat world", "90"));
+            lines.Add(Paint(" " + OperationDescription(), "90"));
             lines.Add(string.Empty);
         }
 
@@ -461,7 +472,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         int reservedFooter = footer.Count;
         int stageBudget = Math.Max(3, height - lines.Count - reservedFooter - detailCapacity);
         IReadOnlyList<string> visibleStages = SelectVisibleStages(stageBudget);
-        int hiddenBefore = Array.IndexOf(StageOrder, visibleStages[0]);
+        int hiddenBefore = Array.IndexOf(stageOrder, visibleStages[0]);
         if (hiddenBefore > 0) lines.Add(Paint($"   ↑ {hiddenBefore} earlier stages", "90"));
 
         foreach (string stage in visibleStages)
@@ -475,9 +486,9 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
                 StageState.Active => Paint(Spinner[spinnerIndex], "36;1"),
                 _ => Paint("·", "90")
             };
-            string name = active ? Paint(StageNames[stage], "36;1") : StageNames[stage];
+            string name = active ? Paint(stageNames[stage], "36;1") : stageNames[stage];
             string suffix = active
-                ? Paint("  " + Truncate(lastMessage, Math.Max(8, width - StageNames[stage].Length - 10)), "90")
+                ? Paint("  " + Truncate(lastMessage, Math.Max(8, width - stageNames[stage].Length - 10)), "90")
                 : string.Empty;
             lines.Add(" " + icon + "  " + name + suffix);
 
@@ -488,7 +499,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
             }
         }
 
-        int hiddenAfter = StageOrder.Length - hiddenBefore - visibleStages.Count;
+        int hiddenAfter = stageOrder.Length - hiddenBefore - visibleStages.Count;
         if (hiddenAfter > 0) lines.Add(Paint($"   ↓ {hiddenAfter} upcoming stages", "90"));
 
         while (lines.Count < height - reservedFooter) lines.Add(string.Empty);
@@ -540,18 +551,18 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
 
     private IReadOnlyList<string> SelectVisibleStages(int budget)
     {
-        int count = Math.Clamp(budget, 3, StageOrder.Length);
-        if (count == StageOrder.Length) return StageOrder;
+        int count = Math.Clamp(budget, 3, stageOrder.Length);
+        if (count == stageOrder.Length) return stageOrder;
         int activeIndex = activeStage == null
-            ? Math.Max(0, Array.FindLastIndex(StageOrder, stage => stages[stage] == StageState.Complete))
-            : Array.IndexOf(StageOrder, activeStage);
-        int start = Math.Clamp(activeIndex - count / 2, 0, StageOrder.Length - count);
-        return StageOrder.Skip(start).Take(count).ToArray();
+            ? Math.Max(0, Array.FindLastIndex(stageOrder, stage => stages[stage] == StageState.Complete))
+            : Array.IndexOf(stageOrder, activeStage);
+        int start = Math.Clamp(activeIndex - count / 2, 0, stageOrder.Length - count);
+        return stageOrder.Skip(start).Take(count).ToArray();
     }
 
     private string BuildProgressFooter(int width)
     {
-        if (!uploadProgress.HasValue) return Paint(" Waiting for deployment events", "90");
+        if (!uploadProgress.HasValue) return Paint(" Waiting for operation events", "90");
         int barWidth = Math.Clamp(width - 16, 8, 48);
         int complete = Math.Clamp((int)Math.Round(uploadProgress.Value * barWidth), 0, barWidth);
         return " " + Paint(new string('━', complete), "36;1") + Paint(new string('─', barWidth - complete), "90") +
@@ -563,6 +574,30 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         int row = Math.Max(1, CurrentSize().Height - 2);
         output.Write($"\x1b[{row};1H\x1b[2K  ");
     }
+
+    private string OperationTitle() => operation switch
+    {
+        OperationMode.Meta => "WORLD META",
+        OperationMode.Check => "PREFLIGHT CHECK",
+        _ => "WORLD DEPLOY"
+    };
+
+    private string OperationDescription() => operation switch
+    {
+        OperationMode.Meta => "Update VRChat world metadata without a bundle build",
+        OperationMode.Check => "Compile and inspect VRChat upload readiness without uploading",
+        _ => "Build, sign, and publish a VRChat world"
+    };
+
+    private string CompletionLabel(bool success) => (operation, success) switch
+    {
+        (OperationMode.Meta, true) => "Metadata update complete",
+        (OperationMode.Meta, false) => "Metadata update failed",
+        (OperationMode.Check, true) => "Preflight check passed",
+        (OperationMode.Check, false) => "Preflight check failed",
+        (_, true) => "Deployment complete",
+        _ => "Deployment failed"
+    };
 
     private ConsoleKeyInfo ReadKeyInterruptibly()
     {

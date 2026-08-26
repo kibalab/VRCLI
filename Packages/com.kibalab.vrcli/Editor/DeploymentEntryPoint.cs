@@ -35,14 +35,51 @@ namespace KibaLab.WorldDeployment.Editor
             {
                 DeploymentLog.Start();
                 request = DeploymentRequest.FromEnvironment();
-                DeploymentLog.Phase("BOOT", "Deployment request accepted for " + request.Platform + ".");
+                DeploymentLog.Phase("BOOT", request.Operation + " request accepted for " + request.Platform + ".");
                 await Authentication.LoginAsync(request);
-                DeploymentLog.Phase("CONTEXT", "Authentication complete. Resolving deployment context.");
+                DeploymentLog.Phase("CONTEXT", "Authentication complete. Resolving operation context.");
+
+                if (request.Operation == RequestOperation.Meta)
+                {
+                    LogDeploymentContext(request, null);
+                    string worldId = await WorldMetadata.UpdateAsync(request);
+                    DeploymentResult.Write(request.ResultFile, true, 0, worldId, false, null, "complete",
+                        "World metadata updated without building or uploading a bundle.");
+                    DeploymentLog.Phase("COMPLETE", "Metadata update completed successfully for " + worldId + ".");
+                    EditorApplication.Exit(0);
+                    return;
+                }
+
                 string scenePath = WorldDeployer.ResolveScenePath(request.ScenePath);
                 LogDeploymentContext(request, scenePath);
-                string worldId = await WorldDeployer.DeployAsync(request, scenePath);
-                DeploymentResult.Write(request.ResultFile, true, 0, worldId, request.IsNew, request.Platform, "complete", request.IsNew ? "World created, built, and uploaded." : "World build and upload completed.");
-                DeploymentLog.Phase("COMPLETE", "Deployment completed successfully for " + worldId + ".");
+                if (request.Operation == RequestOperation.Check)
+                {
+                    CheckReport report = await WorldChecker.RunAsync(request, scenePath);
+                    int checkExitCode = report.Success ? 0 : 40;
+                    DeploymentResult.Write(
+                        request.ResultFile,
+                        report.Success,
+                        checkExitCode,
+                        report.WorldId,
+                        false,
+                        request.Platform,
+                        "check",
+                        report.Success
+                            ? "Preflight check completed without blocking errors; no bundle was built or uploaded."
+                            : "Preflight check found upload-blocking problems; no bundle was built or uploaded.",
+                        report.Errors.ToArray(),
+                        report.Warnings.ToArray(),
+                        report.Information.ToArray());
+                    DeploymentLog.Phase("COMPLETE", report.Success
+                        ? "Preflight check passed without server changes."
+                        : "Preflight check completed with blocking errors.");
+                    EditorApplication.Exit(checkExitCode);
+                    return;
+                }
+
+                string deployedWorldId = await WorldDeployer.DeployAsync(request, scenePath);
+                DeploymentResult.Write(request.ResultFile, true, 0, deployedWorldId, request.IsNew, request.Platform, "complete", request.IsNew ? "World created, built, and uploaded." : "World build and upload completed.");
+                DeploymentLog.Phase("COMPLETE", "Deployment completed successfully for " + deployedWorldId + ".");
                 EditorApplication.Exit(0);
             }
             catch (Exception exception)
@@ -76,15 +113,19 @@ namespace KibaLab.WorldDeployment.Editor
             DeploymentLog.Info("CONTEXT", "Project: " + PlayerSettings.productName);
             DeploymentLog.Info("CONTEXT", "Project root: " + projectRoot);
             DeploymentLog.Info("CONTEXT", "Project version: " + PlayerSettings.bundleVersion);
-            DeploymentLog.Info("CONTEXT", "Scene: " + scenePath);
-            DeploymentLog.Info("CONTEXT", "Requested platform: " + request.Platform);
-            DeploymentLog.Info("CONTEXT", "Unity active target: " + EditorUserBuildSettings.activeBuildTarget);
+            if (!string.IsNullOrWhiteSpace(scenePath))
+            {
+                DeploymentLog.Info("CONTEXT", "Scene: " + scenePath);
+                DeploymentLog.Info("CONTEXT", "Requested platform: " + request.Platform);
+                DeploymentLog.Info("CONTEXT", "Unity active target: " + EditorUserBuildSettings.activeBuildTarget);
+            }
             DeploymentLog.Info("CONTEXT", "Unity version: " + Application.unityVersion);
             DeploymentLog.Info("CONTEXT", "VRChat SDK version: " + VRC.Tools.SdkVersion);
             DeploymentLog.Info("CONTEXT", "VRChat SDK platform: " + VRC.Tools.Platform);
             DeploymentLog.Info("CONTEXT", "VRCLI bridge version: " + DeploymentLog.Version);
-            DeploymentLog.Info("CONTEXT", "Mode: " + (request.IsNew ? "create new private world" : "update existing world"));
-            DeploymentLog.Info("CONTEXT", "Blueprint: " + request.BlueprintId);
+            DeploymentLog.Info("CONTEXT", "Mode: " + request.Operation);
+            if (!string.IsNullOrWhiteSpace(request.BlueprintId))
+                DeploymentLog.Info("CONTEXT", "Blueprint: " + request.BlueprintId);
         }
 
         private static int Classify(Exception exception)

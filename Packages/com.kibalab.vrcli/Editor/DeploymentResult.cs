@@ -14,8 +14,22 @@ namespace KibaLab.WorldDeployment.Editor
         public string Platform;
         public string Stage;
         public string Message;
+        public string[] Errors;
+        public string[] Warnings;
+        public string[] Information;
 
-        public static void Write(string resultFile, bool success, int exitCode, string worldId, bool created, string platform, string stage, string message)
+        public static void Write(
+            string resultFile,
+            bool success,
+            int exitCode,
+            string worldId,
+            bool created,
+            string platform,
+            string stage,
+            string message,
+            string[] errors = null,
+            string[] warnings = null,
+            string[] information = null)
         {
             DeploymentResult result = new DeploymentResult
             {
@@ -25,7 +39,10 @@ namespace KibaLab.WorldDeployment.Editor
                 Created = created,
                 Platform = platform,
                 Stage = stage,
-                Message = message
+                Message = message,
+                Errors = errors,
+                Warnings = warnings,
+                Information = information
             };
 
             string directory = Path.GetDirectoryName(resultFile);
