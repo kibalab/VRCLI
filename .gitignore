@@ -6,5 +6,8 @@ artifacts/
 samples/
 *.md
 *.md.meta
+!/README.md
+!/README.ko.md
+!/README.ja.md
 *.user
 *.suo
