@@ -20,8 +20,6 @@ internal sealed class WizardTerminalScreen : IDisposable
     private string? promptValue;
     private string? promptHint;
     private IReadOnlyList<string>? choices;
-    private readonly HashSet<int> selectedChoices = [];
-    private bool multiChoice;
     private int selectedChoice;
     private bool entered;
     private bool retainOnDispose;
@@ -40,7 +38,7 @@ internal sealed class WizardTerminalScreen : IDisposable
         entered = true;
         TerminalInterruptFeedback.Attach(ShowInterruptFeedback);
         Console.Write("\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H");
-        Render(force: true);
+        Render();
     }
 
     public void SetRoute(params string[] labels)
@@ -93,7 +91,7 @@ internal sealed class WizardTerminalScreen : IDisposable
         Render();
     }
 
-    public string ReadText(string label, string? defaultValue, bool secret)
+    public string ReadText(string label, string? defaultValue, bool secret, bool acceptEmpty = false)
     {
         StringBuilder value = new();
         promptLabel = label;
@@ -111,7 +109,7 @@ internal sealed class WizardTerminalScreen : IDisposable
             if (key.Key == ConsoleKey.Escape) throw new OperationCanceledException("Wizard cancelled.");
             if (key.Key == ConsoleKey.Enter)
             {
-                string result = value.Length == 0 ? defaultValue ?? string.Empty : value.ToString();
+                string result = value.Length == 0 && !acceptEmpty ? defaultValue ?? string.Empty : value.ToString();
                 ClearPrompt();
                 Render();
                 return result.Trim().Trim('"');
@@ -131,8 +129,6 @@ internal sealed class WizardTerminalScreen : IDisposable
         promptHint = "↑/↓ or j/k move  ·  Enter confirm  ·  Esc or Ctrl+C ×2 cancel";
         promptValue = null;
         choices = options;
-        multiChoice = false;
-        selectedChoices.Clear();
         selectedChoice = 0;
         notice = null;
         busyMessage = null;
@@ -160,51 +156,6 @@ internal sealed class WizardTerminalScreen : IDisposable
         }
     }
 
-    public IReadOnlyList<int> ReadMultiChoice(string label, IReadOnlyList<string> options)
-    {
-        promptLabel = label;
-        promptHint = "↑/↓ or j/k move  ·  Space toggle  ·  Enter confirm  ·  Esc or Ctrl+C ×2 cancel";
-        promptValue = null;
-        choices = options;
-        multiChoice = true;
-        selectedChoice = 0;
-        selectedChoices.Clear();
-        notice = null;
-        busyMessage = null;
-        while (true)
-        {
-            Render();
-            ConsoleKeyInfo key = ReadKeyInterruptibly();
-            if (key.Key == ConsoleKey.Escape) throw new OperationCanceledException("Wizard cancelled.");
-            if (key.Key == ConsoleKey.Enter)
-            {
-                if (selectedChoices.Count == 0)
-                {
-                    notice = "Select at least one item with Space.";
-                    continue;
-                }
-                int[] result = selectedChoices.Order().ToArray();
-                ClearPrompt();
-                Render();
-                return result;
-            }
-            if (key.Key == ConsoleKey.Spacebar)
-            {
-                if (!selectedChoices.Add(selectedChoice)) selectedChoices.Remove(selectedChoice);
-                notice = null;
-            }
-            else if (key.Key is ConsoleKey.UpArrow || key.KeyChar is 'k' or 'K')
-                selectedChoice = (selectedChoice - 1 + options.Count) % options.Count;
-            else if (key.Key is ConsoleKey.DownArrow || key.KeyChar is 'j' or 'J')
-                selectedChoice = (selectedChoice + 1) % options.Count;
-            else if (char.IsDigit(key.KeyChar))
-            {
-                int numeric = key.KeyChar - '1';
-                if (numeric >= 0 && numeric < options.Count) selectedChoice = numeric;
-            }
-        }
-    }
-
     public bool ReadYesNo(string label, bool defaultValue)
     {
         int selected = ReadChoice(label, defaultValue ? ["Yes", "No"] : ["No", "Yes"]);
@@ -219,7 +170,7 @@ internal sealed class WizardTerminalScreen : IDisposable
         notice = null;
         busyMessage = null;
         ClearPrompt();
-        Render(force: true);
+        Render();
     }
 
     public void RetainForOperation()
@@ -286,7 +237,7 @@ internal sealed class WizardTerminalScreen : IDisposable
         if (context.Count > 0)
         {
             frame.Add(string.Empty);
-            foreach (string line in context.Take(Math.Max(1, height / 4)))
+            foreach (string line in context.Take(ContextCapacity(height)))
                 frame.Add(Paint("    " + Truncate(line, width - 5), "90"));
         }
 
@@ -323,10 +274,7 @@ internal sealed class WizardTerminalScreen : IDisposable
             {
                 string marker = index == selectedChoice ? Paint("❯", "36;1") : " ";
                 string choice = index == selectedChoice ? Paint(choices[index], "36;1") : choices[index];
-                string selection = multiChoice
-                    ? selectedChoices.Contains(index) ? Paint("◆", "36;1") : Paint("◇", "90")
-                    : string.Empty;
-                frame.Add($"   {marker}  {selection}{(multiChoice ? "  " : string.Empty)}{choice}");
+                frame.Add($"   {marker}  {choice}");
             }
         }
         frame.Add(Paint(" " + (promptHint ?? "Esc or Ctrl+C ×2 cancel"), "90"));
@@ -350,14 +298,21 @@ internal sealed class WizardTerminalScreen : IDisposable
         ? Paint(number + " " + label, "36;1")
         : Paint(number + " " + label, "90");
 
+    private static int ContextCapacity(int height)
+    {
+        if (height < 18) return 0;
+        if (height < 24) return 1;
+        if (height < 30) return 2;
+        if (height < 38) return 3;
+        return 4;
+    }
+
     private void ClearPrompt()
     {
         promptLabel = null;
         promptValue = null;
         promptHint = null;
         choices = null;
-        multiChoice = false;
-        selectedChoices.Clear();
     }
 
     private ConsoleKeyInfo ReadKeyInterruptibly()

@@ -6,6 +6,33 @@ namespace WorldDeployment.Tests;
 public sealed class TerminalProgressRendererTests
 {
     [Fact]
+    public async Task DoesNotRedrawTheTitleForEverySpinnerFrame()
+    {
+        StringWriter output = new();
+        TerminalProgressRenderer renderer = new(output, () => (100, 40));
+        renderer.Start();
+        await Task.Delay(350);
+        string activeOutput = output.ToString();
+        await renderer.FinishAsync(true);
+
+        Assert.Equal(1, CountOccurrences(activeOutput, "\x1b[1;1H"));
+    }
+
+    [Fact]
+    public async Task MetadataProgressHasNoUnityOrVpmStages()
+    {
+        StringWriter output = new();
+        TerminalProgressRenderer renderer = new(output, OperationMode.Meta, () => (100, 40));
+        renderer.Start();
+        string screen = CaptureScreen(output.ToString());
+        await renderer.FinishAsync(true);
+
+        Assert.Contains("WORLD META", screen);
+        Assert.DoesNotContain("Unity startup", screen);
+        Assert.DoesNotContain("VPM dependencies", screen);
+    }
+
+    [Fact]
     public async Task RendersCheckSpecificWorkflow()
     {
         StringWriter output = new();

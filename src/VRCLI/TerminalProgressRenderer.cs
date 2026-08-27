@@ -80,7 +80,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         stageOrder = operation switch
         {
             OperationMode.Meta =>
-            ["BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "AUTH", "CONTEXT", "WORLD", "UPLOAD"],
+            ["BOOT", "AUTH", "CONTEXT", "WORLD", "UPLOAD"],
             OperationMode.Check =>
             ["BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "AUTH", "CONTEXT", "PREPARE", "WORLD", "SDK", "CHECK"],
             _ =>
@@ -436,9 +436,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
     {
         (int width, int height) = CurrentSize();
         List<string> lines = [];
-        string elapsed = FormatElapsed(Stopwatch.GetElapsedTime(deploymentStarted));
-        lines.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  " + OperationTitle(), "90;1") +
-                  AlignRight(Paint(elapsed, "90"), width - 2, 24));
+        lines.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  " + OperationTitle(), "90;1"));
         lines.Add(Paint(" " + new string('─', width - 2), "90"));
 
         if (height >= 18 && overviewProject != null)

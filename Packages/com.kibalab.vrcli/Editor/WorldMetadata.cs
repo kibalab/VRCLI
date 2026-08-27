@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Threading.Tasks;
 using VRC;
@@ -72,38 +71,5 @@ namespace KibaLab.WorldDeployment.Editor
                 DeploymentLog.Info("WORLD", "Requested thumbnail replacement: " + request.ThumbnailPath);
         }
 
-        public static async Task<string> UpdateAsync(DeploymentRequest request)
-        {
-            DeploymentLog.Phase("WORLD", "Fetching the existing VRChat world record.");
-            VRCWorld world = await FetchOwnedAsync(request.BlueprintId);
-            DeploymentLog.Info("WORLD", "World: " + world.Name + " (version " + world.Version + ")");
-            DeploymentLog.Info("WORLD", "Ownership confirmed for the authenticated account.");
-            Apply(ref world, request);
-
-            VRCWorld updated = world;
-            if (request.HasMetadataUpdate)
-            {
-                DeploymentLog.Phase("UPLOAD", "Saving requested world metadata fields without building a bundle.");
-                updated = await VRCApi.UpdateWorldInfo(request.BlueprintId, world);
-                DeploymentLog.Info("UPLOAD", "World metadata fields were updated.");
-            }
-            if (request.UpdateThumbnail)
-            {
-                DeploymentLog.Phase("UPLOAD", "Uploading the replacement world thumbnail without building a bundle.");
-                updated = await VRCApi.UpdateWorldImage(
-                    request.BlueprintId,
-                    updated,
-                    request.ThumbnailPath,
-                    (status, progress) => DeploymentLog.Info(
-                        "UPLOAD",
-                        (string.IsNullOrWhiteSpace(status) ? "thumbnail" : status) + " " +
-                        (Math.Max(0f, Math.Min(1f, progress)) * 100f).ToString("F1", CultureInfo.InvariantCulture) + "%"));
-                DeploymentLog.Info("UPLOAD", "World thumbnail was updated.");
-            }
-
-            DeploymentLog.Info("UPLOAD", "Server world version: " + updated.Version);
-            DeploymentLog.Info("UPLOAD", "Server updated time: " + updated.UpdatedAt.ToUniversalTime().ToString("O"));
-            return updated.ID;
-        }
     }
 }

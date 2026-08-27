@@ -32,9 +32,10 @@ public static class InteractiveWizard
         try
         {
             OperationMode operation = ParseOperation(invocation[0]);
+            if (operation == OperationMode.Meta)
+                throw new InvalidOperationException("Use InteractiveMetadataEditor for metadata sessions.");
             screen.SetRoute(operation switch
             {
-                OperationMode.Meta => ["ACCOUNT", "METADATA", "REVIEW"],
                 OperationMode.Check => ["ACCOUNT", "PREFLIGHT", "REVIEW"],
                 _ => ["ACCOUNT", "DEPLOYMENT", "REVIEW"]
             });
@@ -89,8 +90,6 @@ public static class InteractiveWizard
 
             return operation switch
             {
-                OperationMode.Meta => RunMetadataWizard(
-                    screen, username, authenticationDescription, hasTotpSecret, temporarySecrets),
                 OperationMode.Check => RunCheckWizard(
                     screen, username, authenticationDescription, hasTotpSecret, temporarySecrets),
                 _ => RunDeploymentWizard(
@@ -195,71 +194,6 @@ public static class InteractiveWizard
             ClearSecrets(temporarySecrets);
             return null;
         }
-        screen.RetainForOperation();
-        return new InteractiveWizardResult(arguments.ToArray(), temporarySecrets);
-    }
-
-    private static InteractiveWizardResult? RunMetadataWizard(
-        WizardTerminalScreen screen,
-        string username,
-        string authenticationDescription,
-        bool hasTotpSecret,
-        Dictionary<string, string> temporarySecrets)
-    {
-        WriteSection("02", "METADATA", "Choose an existing world and the metadata fields to update.");
-        string projectPath = PromptRequired("Unity project path", Directory.GetCurrentDirectory(), IsUnityProject);
-        activeScreen?.AddSummary("Project", projectPath);
-        string blueprint = PromptRequired(
-            "Blueprint ID (wrld_...)",
-            null,
-            value => value.StartsWith("wrld_", StringComparison.Ordinal));
-        activeScreen?.AddSummary("Target", blueprint);
-
-        string[] fields = ["Title", "Description", "Thumbnail", "Maximum capacity", "Recommended capacity", "Tags"];
-        HashSet<int> selected = PromptMultiChoice("Metadata fields to update", fields).ToHashSet();
-        activeScreen?.AddSummary("Changes", string.Join(", ", selected.Select(index => fields[index])));
-
-        List<string> arguments = CreateArguments("meta", username, hasTotpSecret);
-        Add(arguments, "--project", projectPath);
-        Add(arguments, "--blueprint", blueprint);
-
-        int? capacity = null;
-        if (selected.Contains(0)) Add(arguments, "--title", PromptRequired("New world title"));
-        if (selected.Contains(1)) Add(arguments, "--description", Prompt("New description (empty clears it)"));
-        if (selected.Contains(2))
-            Add(arguments, "--thumbnail", PromptRequired("New thumbnail path", null, File.Exists));
-        if (selected.Contains(3))
-        {
-            capacity = PromptInteger("New maximum capacity", 32, 1, int.MaxValue);
-            Add(arguments, "--capacity", capacity.Value.ToString(CultureInfo.InvariantCulture));
-        }
-        if (selected.Contains(4))
-        {
-            int maximum = capacity ?? int.MaxValue;
-            int recommended = PromptInteger("New recommended capacity", Math.Min(16, maximum), 1, maximum);
-            Add(arguments, "--recommended-capacity", recommended.ToString(CultureInfo.InvariantCulture));
-        }
-        if (selected.Contains(5))
-        {
-            string tagInput = PromptRequired("Tags (comma-separated)", null, IsValidTagList);
-            foreach (string tag in SplitTags(tagInput)) Add(arguments, "--tag", tag);
-        }
-
-        WriteReview(
-            "Confirm the requested metadata-only server update.",
-            [
-                ("Account", username),
-                ("Auth", authenticationDescription),
-                ("Target", blueprint),
-                ("Project", projectPath),
-                ("Changes", string.Join(", ", selected.Select(index => fields[index])))
-            ]);
-        if (!PromptYesNo("Apply these metadata changes now", true))
-        {
-            ClearSecrets(temporarySecrets);
-            return null;
-        }
-
         screen.RetainForOperation();
         return new InteractiveWizardResult(arguments.ToArray(), temporarySecrets);
     }
@@ -515,26 +449,6 @@ public static class InteractiveWizard
         }
     }
 
-    private static IReadOnlyList<int> PromptMultiChoice(string label, IReadOnlyList<string> choices)
-    {
-        if (activeScreen != null) return activeScreen.ReadMultiChoice(label, choices);
-        Console.WriteLine("  │  " + Paint("?", "36;1") + " " + label);
-        for (int index = 0; index < choices.Count; index++)
-            Console.WriteLine("  │    " + Paint("[" + (index + 1) + "]", "36") + " " + choices[index]);
-        while (true)
-        {
-            string input = PromptRequired("Selections (comma-separated numbers)");
-            int[] selected = input.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(value => int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int number)
-                    ? number - 1
-                    : -1)
-                .Distinct()
-                .ToArray();
-            if (selected.Length > 0 && selected.All(index => index >= 0 && index < choices.Count)) return selected;
-            Console.WriteLine("  │  " + Paint("!", "33;1") + " Select one or more listed numbers.");
-        }
-    }
-
     private static string PromptScene(string projectPath)
     {
         IReadOnlyList<string> scenes = ProjectInspector.FindProjectScenes(projectPath);
@@ -622,17 +536,6 @@ public static class InteractiveWizard
         if (!hasTotpSecret) arguments.Add("--interactive-two-factor");
         return arguments;
     }
-
-    private static bool IsValidTagList(string value)
-    {
-        string[] tags = SplitTags(value);
-        return tags.Length > 0 && tags.All(tag => !tag.Contains('|'));
-    }
-
-    private static string[] SplitTags(string value) => value
-        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-        .Distinct(StringComparer.Ordinal)
-        .ToArray();
 
     private static bool IsInteractiveCommand(string value) =>
         string.Equals(value, "deploy", StringComparison.OrdinalIgnoreCase) ||

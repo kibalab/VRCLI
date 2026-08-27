@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="SauceControl.Blake2Fast" Version="2.0.0" />
     <Compile Include="..\..\Packages\com.kibalab.vrcli\Editor\TotpGenerator.cs"
              Link="TotpGenerator.cs" />
     <Compile Include="..\..\Packages\com.kibalab.vrcli\Editor\DeploymentEnvironment.cs"

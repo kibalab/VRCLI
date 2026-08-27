@@ -38,10 +38,18 @@ public sealed class DeploymentApplication(
             return ExitCodes.ProjectInvalid;
         }
 
+        if (options.Operation == OperationMode.Meta)
+        {
+            MetadataExecutionResult metadata = await new MetadataApplication(output, error)
+                .RunAsync(options, cancellationToken);
+            LastResult = metadata.Result;
+            return metadata.ExitCode;
+        }
+
         ProjectInspectionResult project = ProjectInspector.Inspect(
             options.ProjectPath,
             options.ScenePath,
-            requireScene: options.Operation != OperationMode.Meta);
+            requireScene: true);
         if (!project.IsValid)
         {
             await error.WriteLineAsync("VRCLI: " + project.Error);
@@ -384,7 +392,7 @@ VRCLI commands and parameters
   meta                          Update only an existing world's metadata
   check                         Check Unity compilation and VRChat SDK upload readiness
 
-  --project <directory>         Unity project directory; default current directory
+  --project <directory>         Unity project directory for deploy/check; default current directory
   --blueprint <wrld_id>         Existing world; required by meta, optional ownership target for check
   --new                         Create a private world; deploy only
   --scene <Assets/...unity>     Scene to deploy or check; auto-detected when unambiguous
@@ -399,7 +407,7 @@ VRCLI commands and parameters
   --tag <tag>                   Repeatable metadata tag; merged into existing tags
   --blueprint-output <file>     Save a newly generated wrld_ ID; deploy only
   --two-factor-code <code>      Current VRChat two-factor code
-  --interactive-two-factor     Prompt only when VRChat requests two-factor authentication
+  --interactive-two-factor      Prompt only when VRChat requests two-factor authentication
   --config <file>               Configuration file; default ./vrcli.json when present
   --plain                       Append-only output for scripts and CI
   --yes                         Certify content ownership when deployment requires it
@@ -424,4 +432,5 @@ public sealed record DeploymentResult(
     IReadOnlyList<string>? Warnings = null,
     IReadOnlyList<string>? Information = null,
     IReadOnlyList<string>? CompilerErrors = null,
-    IReadOnlyList<string>? CompilerWarnings = null);
+    IReadOnlyList<string>? CompilerWarnings = null,
+    IReadOnlyList<MetadataChange>? Changes = null);

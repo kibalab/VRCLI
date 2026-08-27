@@ -28,6 +28,18 @@ internal static class Program
             }
         };
 
+        if (InteractiveMetadataEditor.ShouldStart(args))
+        {
+            try
+            {
+                return await InteractiveMetadataEditor.RunAsync(args, cancellation.Token);
+            }
+            finally
+            {
+                WizardTerminalScreen.CloseRetainedScreen();
+            }
+        }
+
         InteractiveWizardResult? wizard = null;
         if (InteractiveWizard.ShouldStart(args))
         {

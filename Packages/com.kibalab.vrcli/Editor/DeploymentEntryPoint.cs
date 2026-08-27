@@ -39,17 +39,6 @@ namespace KibaLab.WorldDeployment.Editor
                 await Authentication.LoginAsync(request);
                 DeploymentLog.Phase("CONTEXT", "Authentication complete. Resolving operation context.");
 
-                if (request.Operation == RequestOperation.Meta)
-                {
-                    LogDeploymentContext(request, null);
-                    string worldId = await WorldMetadata.UpdateAsync(request);
-                    DeploymentResult.Write(request.ResultFile, true, 0, worldId, false, null, "complete",
-                        "World metadata updated without building or uploading a bundle.");
-                    DeploymentLog.Phase("COMPLETE", "Metadata update completed successfully for " + worldId + ".");
-                    EditorApplication.Exit(0);
-                    return;
-                }
-
                 string scenePath = WorldDeployer.ResolveScenePath(request.ScenePath);
                 LogDeploymentContext(request, scenePath);
                 if (request.Operation == RequestOperation.Check)

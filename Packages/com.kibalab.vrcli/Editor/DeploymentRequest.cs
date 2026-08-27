@@ -114,7 +114,7 @@ namespace KibaLab.WorldDeployment.Editor
             string value = Require(DeploymentEnvironment.Operation);
             RequestOperation operation;
             if (!Enum.TryParse(value, true, out operation))
-                throw new ArgumentException("VRCLI_OPERATION must be Deploy, Meta, or Check.");
+                throw new ArgumentException("VRCLI_OPERATION must be Deploy or Check.");
             return operation;
         }
 
@@ -162,7 +162,6 @@ namespace KibaLab.WorldDeployment.Editor
     internal enum RequestOperation
     {
         Deploy,
-        Meta,
         Check
     }
 }
