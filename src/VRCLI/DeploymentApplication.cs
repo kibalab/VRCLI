@@ -393,7 +393,7 @@ VRCLI commands and parameters
   check                         Check Unity compilation and VRChat SDK upload readiness
 
   --project <directory>         Unity project directory for deploy/check; default current directory
-  --blueprint <wrld_id>         Existing world; required by meta, optional ownership target for check
+  --blueprint <wrld_id>         World override for deploy/check; deploy uses the scene ID when omitted; required by meta
   --new                         Create a private world; deploy only
   --scene <Assets/...unity>     Scene to deploy or check; auto-detected when unambiguous
   --platform <platform>         Deploy/check target: StandaloneWindows64 or Android; default StandaloneWindows64

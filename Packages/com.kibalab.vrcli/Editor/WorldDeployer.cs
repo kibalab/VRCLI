@@ -38,6 +38,27 @@ namespace KibaLab.WorldDeployment.Editor
             if (pipeline == null) throw new InvalidOperationException("PipelineManager was not found in the selected scene.");
             DeploymentLog.Info("PREPARE", "VRC_SceneDescriptor and PipelineManager were found.");
 
+            if (!request.IsNew)
+            {
+                bool usesSceneBlueprint = string.IsNullOrWhiteSpace(request.BlueprintId);
+                string blueprintId = usesSceneBlueprint ? pipeline.blueprintId : request.BlueprintId;
+                if (string.IsNullOrWhiteSpace(blueprintId))
+                {
+                    throw new ArgumentException(
+                        "No Blueprint ID was provided and the selected scene's PipelineManager has no Blueprint ID.");
+                }
+                if (!blueprintId.StartsWith("wrld_", StringComparison.Ordinal))
+                {
+                    throw new ArgumentException(
+                        "The selected world Blueprint ID must begin with 'wrld_': " + blueprintId);
+                }
+
+                request.UseBlueprintId(blueprintId);
+                DeploymentLog.Info("PREPARE", usesSceneBlueprint
+                    ? "Using the scene PipelineManager Blueprint ID: " + blueprintId
+                    : "Using the requested Blueprint override: " + blueprintId);
+            }
+
             // Let the SDK panel initialize in its new-world state. Giving it a not-yet-created
             // ID during initialization makes its background lookup treat the ID as invalid and clear it.
             pipeline.blueprintId = request.IsNew ? string.Empty : request.BlueprintId;

@@ -60,6 +60,26 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
+    public void ParsesExistingDeploymentWithoutBlueprintOverride()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+        [
+            "deploy",
+            "--project", ".",
+            "--scene", "Assets/Scenes/Main.unity",
+            "--platform", "StandaloneWindows64",
+            "--login", "kibalab",
+            "--password", "secret",
+            "--plain"
+        ]);
+
+        Assert.Null(result.Error);
+        Assert.Equal(OperationMode.Deploy, result.Options?.Operation);
+        Assert.False(result.Options?.IsNew);
+        Assert.Equal(string.Empty, result.Options?.BlueprintId);
+    }
+
+    [Fact]
     public void CheckCommandRejectsMetadataChanges()
     {
         ParseResult result = new CommandLineParser().Parse(

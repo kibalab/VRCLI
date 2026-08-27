@@ -146,9 +146,9 @@ public static class InteractiveWizard
             string targetDescription;
             if (mode == 0)
             {
-                string blueprint = PromptRequired("Blueprint ID (wrld_...)", null, value => value.StartsWith("wrld_", StringComparison.Ordinal));
-                Add(arguments, "--blueprint", blueprint);
-                targetDescription = blueprint;
+                string blueprint = PromptOptionalBlueprint();
+                if (!string.IsNullOrWhiteSpace(blueprint)) Add(arguments, "--blueprint", blueprint);
+                targetDescription = string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint;
                 activeScreen?.AddSummary("Target", targetDescription);
             }
             else
@@ -216,13 +216,7 @@ public static class InteractiveWizard
         string platformName = platform == 0 ? "StandaloneWindows64" : "Android";
         activeScreen?.AddSummary("Platform", platformName);
 
-        string blueprint;
-        while (true)
-        {
-            blueprint = Prompt("Blueprint override (blank uses the scene)");
-            if (string.IsNullOrWhiteSpace(blueprint) || blueprint.StartsWith("wrld_", StringComparison.Ordinal)) break;
-            activeScreen?.SetNotice("Enter a world ID beginning with wrld_, or leave it blank.");
-        }
+        string blueprint = PromptOptionalBlueprint();
         activeScreen?.AddSummary("Target", string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint);
 
         List<string> arguments = CreateArguments("check", username, hasTotpSecret);
@@ -249,6 +243,17 @@ public static class InteractiveWizard
 
         screen.RetainForOperation();
         return new InteractiveWizardResult(arguments.ToArray(), temporarySecrets);
+    }
+
+    private static string PromptOptionalBlueprint()
+    {
+        while (true)
+        {
+            string blueprint = Prompt("Blueprint override (blank uses the scene)");
+            if (string.IsNullOrWhiteSpace(blueprint) || blueprint.StartsWith("wrld_", StringComparison.Ordinal))
+                return blueprint;
+            activeScreen?.SetNotice("Enter a world ID beginning with wrld_, or leave it blank.");
+        }
     }
 
     public static InteractiveTwoFactorAnswer PromptForTwoFactorChallenge(IReadOnlyList<string> methods)

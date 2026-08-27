@@ -158,10 +158,10 @@ public sealed class CommandLineParser
             return ParseResult.Failure("Set VRCLI_USERNAME or provide --login <username-or-email>.");
         }
 
-        if (operation == OperationMode.Deploy && isNew == !string.IsNullOrWhiteSpace(blueprint))
+        if (operation == OperationMode.Deploy && isNew && !string.IsNullOrWhiteSpace(blueprint))
         {
             return ParseResult.Failure(
-                "Choose one target: --blueprint <wrld_id>, --new, VRCLI_BLUEPRINT_ID, or a vrcli.json setting.");
+                "Choose one target: --new cannot be combined with --blueprint, VRCLI_BLUEPRINT_ID, or a configured Blueprint ID.");
         }
 
         string? title = Get(values, "title");

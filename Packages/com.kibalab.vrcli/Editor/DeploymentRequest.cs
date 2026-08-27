@@ -55,8 +55,8 @@ namespace KibaLab.WorldDeployment.Editor
                     StringComparison.OrdinalIgnoreCase)
             };
 
-            if (request.Operation != RequestOperation.Check && string.IsNullOrWhiteSpace(request.BlueprintId))
-                throw new ArgumentException("VRCLI_BLUEPRINT_ID is missing.");
+            if (request.IsNew && string.IsNullOrWhiteSpace(request.BlueprintId))
+                throw new ArgumentException("A generated Blueprint ID is missing for the new world.");
             if (request.Operation != RequestOperation.Deploy && request.IsNew)
                 throw new ArgumentException("VRCLI_CREATE_WORLD is only valid for deployment.");
 
@@ -107,6 +107,11 @@ namespace KibaLab.WorldDeployment.Editor
             }
 
             return request;
+        }
+
+        internal void UseBlueprintId(string blueprintId)
+        {
+            BlueprintId = blueprintId;
         }
 
         private static RequestOperation ReadOperation()
