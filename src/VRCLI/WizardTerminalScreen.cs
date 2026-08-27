@@ -5,11 +5,12 @@ namespace KibaLab.WorldDeployment;
 internal sealed class WizardTerminalScreen : IDisposable
 {
     private static readonly object RetainedGate = new();
-    private static bool retainedForDeployment;
+    private static bool retainedScreen;
     private readonly List<string> previousFrame = [];
     private readonly List<(string Label, string Value)> summary = [];
     private readonly CancellationToken cancellationToken;
     private IReadOnlyList<string> context = [];
+    private IReadOnlyList<string> route = ["ACCOUNT", "DEPLOYMENT", "REVIEW"];
     private string step = "01";
     private string title = "ACCOUNT";
     private string description = "Verify the publisher identity.";
@@ -19,6 +20,8 @@ internal sealed class WizardTerminalScreen : IDisposable
     private string? promptValue;
     private string? promptHint;
     private IReadOnlyList<string>? choices;
+    private readonly HashSet<int> selectedChoices = [];
+    private bool multiChoice;
     private int selectedChoice;
     private bool entered;
     private bool retainOnDispose;
@@ -38,6 +41,13 @@ internal sealed class WizardTerminalScreen : IDisposable
         TerminalInterruptFeedback.Attach(ShowInterruptFeedback);
         Console.Write("\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H");
         Render(force: true);
+    }
+
+    public void SetRoute(params string[] labels)
+    {
+        if (labels.Length == 0) throw new ArgumentException("A wizard route requires at least one section.", nameof(labels));
+        route = labels;
+        Render();
     }
 
     public void SetSection(string number, string sectionTitle, string sectionDescription)
@@ -121,6 +131,8 @@ internal sealed class WizardTerminalScreen : IDisposable
         promptHint = "↑/↓ or j/k move  ·  Enter confirm  ·  Esc or Ctrl+C ×2 cancel";
         promptValue = null;
         choices = options;
+        multiChoice = false;
+        selectedChoices.Clear();
         selectedChoice = 0;
         notice = null;
         busyMessage = null;
@@ -137,6 +149,51 @@ internal sealed class WizardTerminalScreen : IDisposable
                 return result;
             }
             if (key.Key is ConsoleKey.UpArrow || key.KeyChar is 'k' or 'K')
+                selectedChoice = (selectedChoice - 1 + options.Count) % options.Count;
+            else if (key.Key is ConsoleKey.DownArrow || key.KeyChar is 'j' or 'J')
+                selectedChoice = (selectedChoice + 1) % options.Count;
+            else if (char.IsDigit(key.KeyChar))
+            {
+                int numeric = key.KeyChar - '1';
+                if (numeric >= 0 && numeric < options.Count) selectedChoice = numeric;
+            }
+        }
+    }
+
+    public IReadOnlyList<int> ReadMultiChoice(string label, IReadOnlyList<string> options)
+    {
+        promptLabel = label;
+        promptHint = "↑/↓ or j/k move  ·  Space toggle  ·  Enter confirm  ·  Esc or Ctrl+C ×2 cancel";
+        promptValue = null;
+        choices = options;
+        multiChoice = true;
+        selectedChoice = 0;
+        selectedChoices.Clear();
+        notice = null;
+        busyMessage = null;
+        while (true)
+        {
+            Render();
+            ConsoleKeyInfo key = ReadKeyInterruptibly();
+            if (key.Key == ConsoleKey.Escape) throw new OperationCanceledException("Wizard cancelled.");
+            if (key.Key == ConsoleKey.Enter)
+            {
+                if (selectedChoices.Count == 0)
+                {
+                    notice = "Select at least one item with Space.";
+                    continue;
+                }
+                int[] result = selectedChoices.Order().ToArray();
+                ClearPrompt();
+                Render();
+                return result;
+            }
+            if (key.Key == ConsoleKey.Spacebar)
+            {
+                if (!selectedChoices.Add(selectedChoice)) selectedChoices.Remove(selectedChoice);
+                notice = null;
+            }
+            else if (key.Key is ConsoleKey.UpArrow || key.KeyChar is 'k' or 'K')
                 selectedChoice = (selectedChoice - 1 + options.Count) % options.Count;
             else if (key.Key is ConsoleKey.DownArrow || key.KeyChar is 'j' or 'J')
                 selectedChoice = (selectedChoice + 1) % options.Count;
@@ -165,10 +222,10 @@ internal sealed class WizardTerminalScreen : IDisposable
         Render(force: true);
     }
 
-    public void RetainForDeployment()
+    public void RetainForOperation()
     {
         if (!entered) return;
-        lock (RetainedGate) retainedForDeployment = true;
+        lock (RetainedGate) retainedScreen = true;
         retainOnDispose = true;
     }
 
@@ -176,8 +233,8 @@ internal sealed class WizardTerminalScreen : IDisposable
     {
         lock (RetainedGate)
         {
-            if (!retainedForDeployment) return false;
-            retainedForDeployment = false;
+            if (!retainedScreen) return false;
+            retainedScreen = false;
             return true;
         }
     }
@@ -186,8 +243,8 @@ internal sealed class WizardTerminalScreen : IDisposable
     {
         lock (RetainedGate)
         {
-            if (!retainedForDeployment) return;
-            retainedForDeployment = false;
+            if (!retainedScreen) return;
+            retainedScreen = false;
             Console.Write("\x1b[?25h\x1b[?1049l");
             Console.Out.Flush();
         }
@@ -208,12 +265,14 @@ internal sealed class WizardTerminalScreen : IDisposable
         if (!entered) return;
         (int width, int height) = Size();
         List<string> frame = [];
-        string route = width >= 92
-            ? Step("01", "ACCOUNT") + Paint("  →  ", "90") + Step("02", "DEPLOYMENT") + Paint("  →  ", "90") + Step("03", "REVIEW")
-            : width >= 64
-                ? Step("01", "ACCOUNT") + Paint("  →  ", "90") + Step("02", "DEPLOY") + Paint("  →  ", "90") + Step("03", "REVIEW")
-                : Step(step, title);
-        frame.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  ", "90") + route);
+        string routeText = width >= 64
+            ? string.Join(
+                Paint("  →  ", "90"),
+                route.Select((label, index) => Step(
+                    (index + 1).ToString("00"),
+                    label)))
+            : Step(step, title);
+        frame.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  ", "90") + routeText);
         frame.Add(Paint(" " + new string('─', width - 2), "90"));
         frame.Add(string.Empty);
         frame.Add(" " + Paint(title, "1"));
@@ -264,7 +323,10 @@ internal sealed class WizardTerminalScreen : IDisposable
             {
                 string marker = index == selectedChoice ? Paint("❯", "36;1") : " ";
                 string choice = index == selectedChoice ? Paint(choices[index], "36;1") : choices[index];
-                frame.Add($"   {marker}  {choice}");
+                string selection = multiChoice
+                    ? selectedChoices.Contains(index) ? Paint("◆", "36;1") : Paint("◇", "90")
+                    : string.Empty;
+                frame.Add($"   {marker}  {selection}{(multiChoice ? "  " : string.Empty)}{choice}");
             }
         }
         frame.Add(Paint(" " + (promptHint ?? "Esc or Ctrl+C ×2 cancel"), "90"));
@@ -294,6 +356,8 @@ internal sealed class WizardTerminalScreen : IDisposable
         promptValue = null;
         promptHint = null;
         choices = null;
+        multiChoice = false;
+        selectedChoices.Clear();
     }
 
     private ConsoleKeyInfo ReadKeyInterruptibly()

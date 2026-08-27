@@ -29,11 +29,11 @@ internal static class Program
         };
 
         InteractiveWizardResult? wizard = null;
-        if (InteractiveDeployWizard.ShouldStart(args))
+        if (InteractiveWizard.ShouldStart(args))
         {
             try
             {
-                wizard = InteractiveDeployWizard.Run(cancellation.Token);
+                wizard = InteractiveWizard.Run(args, cancellation.Token);
             }
             catch (VrchatCredentialException exception)
             {
@@ -43,11 +43,11 @@ internal static class Program
             }
             if (wizard == null)
             {
-                Console.WriteLine("  ◇ Deployment cancelled. No build or upload was started.");
+                Console.WriteLine("  ◇ " + InteractiveWizard.CancellationMessage(args));
                 return ExitCodes.Success;
             }
             args = wizard.Arguments;
-            InteractiveDeployWizard.ApplySecrets(wizard.TemporarySecrets);
+            InteractiveWizard.ApplySecrets(wizard.TemporarySecrets);
         }
 
         try
@@ -57,7 +57,7 @@ internal static class Program
         }
         finally
         {
-            if (wizard != null) InteractiveDeployWizard.ClearSecrets(wizard.TemporarySecrets);
+            if (wizard != null) InteractiveWizard.ClearSecrets(wizard.TemporarySecrets);
             WizardTerminalScreen.CloseRetainedScreen();
         }
     }

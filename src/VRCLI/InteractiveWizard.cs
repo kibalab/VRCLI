@@ -9,14 +9,14 @@ public sealed record InteractiveWizardResult(
 
 public sealed record InteractiveTwoFactorAnswer(string Method, string Code);
 
-public static class InteractiveDeployWizard
+public static class InteractiveWizard
 {
     private static WizardTerminalScreen? activeScreen;
 
     public static bool IsWizardInvocation(string[] args) =>
-        (args.Length == 1 && string.Equals(args[0], "deploy", StringComparison.OrdinalIgnoreCase)) ||
-        (args.Length == 2 && string.Equals(args[0], "deploy", StringComparison.OrdinalIgnoreCase) &&
-         string.Equals(args[1], "--tui", StringComparison.OrdinalIgnoreCase));
+        args.Length is 1 or 2 &&
+        IsInteractiveCommand(args[0]) &&
+        (args.Length == 1 || string.Equals(args[1], "--tui", StringComparison.OrdinalIgnoreCase));
 
     public static bool ShouldStart(string[] args)
     {
@@ -25,17 +25,26 @@ public static class InteractiveDeployWizard
         return !ciVariables.Any(name => IsTruthy(Environment.GetEnvironmentVariable(name)));
     }
 
-    public static InteractiveWizardResult? Run(CancellationToken cancellationToken = default)
+    public static InteractiveWizardResult? Run(string[] invocation, CancellationToken cancellationToken = default)
     {
         using WizardTerminalScreen screen = new(cancellationToken);
         activeScreen = screen;
         try
         {
+            OperationMode operation = ParseOperation(invocation[0]);
+            screen.SetRoute(operation switch
+            {
+                OperationMode.Meta => ["ACCOUNT", "METADATA", "REVIEW"],
+                OperationMode.Check => ["ACCOUNT", "PREFLIGHT", "REVIEW"],
+                _ => ["ACCOUNT", "DEPLOYMENT", "REVIEW"]
+            });
             TerminalProgressRenderer.ShouldUse(TerminalMode.Tui, false);
             WriteHeader();
 
-            WriteSection("01", "ACCOUNT", "Verify the publisher identity before configuring the build.");
-            string username = PromptRequired("VRChat username or account email");
+            WriteSection("01", "ACCOUNT", "Verify the VRChat account before configuring the operation.");
+            string username = PromptRequired(
+                "VRChat username or account email",
+                Environment.GetEnvironmentVariable(DeploymentEnvironment.Username));
             Dictionary<string, string> temporarySecrets = new(StringComparer.Ordinal);
             string password;
             string? configuredPassword = Environment.GetEnvironmentVariable(DeploymentEnvironment.Password);
@@ -78,74 +87,15 @@ public static class InteractiveDeployWizard
                 ? "saved session → automatic TOTP only if requested"
                 : "saved session → ask only if VRChat requests verification";
 
-            WriteSection("02", "DEPLOYMENT", "Choose the project, target world, scene, and platform.");
-            string projectPath = PromptRequired("Unity project path", Directory.GetCurrentDirectory(), Directory.Exists);
-            activeScreen?.AddSummary("Project", projectPath);
-            string scene = PromptScene(projectPath);
-            activeScreen?.AddSummary("Scene", scene);
-            int mode = PromptChoice("Deployment mode", ["Update an existing world", "Create a new private world"]);
-            activeScreen?.AddSummary("Mode", mode == 0 ? "Update existing world" : "Create new private world");
-            int platform = PromptChoice("Target platform", ["StandaloneWindows64", "Android (Quest)"]);
-            activeScreen?.AddSummary("Platform", platform == 0 ? "StandaloneWindows64" : "Android (Quest)");
-
-            List<string> arguments = ["deploy", "--project", projectPath, "--platform", platform == 0 ? "StandaloneWindows64" : "Android", "--tui"];
-            Add(arguments, "--scene", scene);
-            Add(arguments, "--login", username);
-            if (!hasTotpSecret)
-                arguments.Add("--interactive-two-factor");
-
-            string targetDescription;
-            if (mode == 0)
+            return operation switch
             {
-                string blueprint = PromptRequired("Blueprint ID (wrld_...)", null, value => value.StartsWith("wrld_", StringComparison.Ordinal));
-                Add(arguments, "--blueprint", blueprint);
-                targetDescription = blueprint;
-                activeScreen?.AddSummary("Target", targetDescription);
-            }
-            else
-            {
-                string name = PromptRequired("World name");
-                string description = Prompt("Description");
-                string thumbnail = PromptRequired("Thumbnail path", null, File.Exists);
-                int capacity = PromptInteger("Maximum capacity", 32, 1, int.MaxValue);
-                int recommended = PromptInteger("Recommended capacity", Math.Min(16, capacity), 1, capacity);
-                string blueprintOutput = Prompt("Blueprint output file", Path.Combine(projectPath, "blueprint.txt"));
-                arguments.Add("--new");
-                Add(arguments, "--title", name);
-                if (!string.IsNullOrWhiteSpace(description)) Add(arguments, "--description", description);
-                Add(arguments, "--thumbnail", thumbnail);
-                Add(arguments, "--capacity", capacity.ToString(CultureInfo.InvariantCulture));
-                Add(arguments, "--recommended-capacity", recommended.ToString(CultureInfo.InvariantCulture));
-                if (!string.IsNullOrWhiteSpace(blueprintOutput)) Add(arguments, "--blueprint-output", blueprintOutput);
-                targetDescription = name + " (new private world)";
-                activeScreen?.AddSummary("Target", targetDescription);
-            }
-
-            bool acceptsOwnership = PromptYesNo("I certify that I have the rights to upload this content", true);
-            if (!acceptsOwnership)
-            {
-                activeScreen?.SetNotice("Deployment cancelled because content ownership was not certified.");
-                ClearSecrets(temporarySecrets);
-                return null;
-            }
-            arguments.Add("--yes");
-            activeScreen?.AddSummary("Ownership", "Confirmed");
-
-            WriteReview(
-                targetDescription,
-                projectPath,
-                scene,
-                platform == 0 ? "StandaloneWindows64" : "Android",
-                username,
-                authenticationDescription);
-
-            if (!PromptYesNo("Start build and upload now", false))
-            {
-                ClearSecrets(temporarySecrets);
-                return null;
-            }
-            screen.RetainForDeployment();
-            return new InteractiveWizardResult(arguments.ToArray(), temporarySecrets);
+                OperationMode.Meta => RunMetadataWizard(
+                    screen, username, authenticationDescription, hasTotpSecret, temporarySecrets),
+                OperationMode.Check => RunCheckWizard(
+                    screen, username, authenticationDescription, hasTotpSecret, temporarySecrets),
+                _ => RunDeploymentWizard(
+                    screen, username, authenticationDescription, hasTotpSecret, temporarySecrets)
+            };
         }
         catch (OperationCanceledException)
         {
@@ -155,6 +105,214 @@ public static class InteractiveDeployWizard
         {
             activeScreen = null;
         }
+    }
+
+    public static string CancellationMessage(string[] invocation)
+    {
+        OperationMode operation = invocation.Length > 0 && IsInteractiveCommand(invocation[0])
+            ? ParseOperation(invocation[0])
+            : OperationMode.Deploy;
+        return operation switch
+        {
+            OperationMode.Meta => "Metadata update cancelled. No world record was changed.",
+            OperationMode.Check => "Preflight check cancelled. No build or upload was started.",
+            _ => "Deployment cancelled. No build or upload was started."
+        };
+    }
+
+    private static InteractiveWizardResult? RunDeploymentWizard(
+        WizardTerminalScreen screen,
+        string username,
+        string authenticationDescription,
+        bool hasTotpSecret,
+        Dictionary<string, string> temporarySecrets)
+    {
+        WriteSection("02", "DEPLOYMENT", "Choose the project, target world, scene, and platform.");
+        string projectPath = PromptRequired("Unity project path", Directory.GetCurrentDirectory(), IsUnityProject);
+        activeScreen?.AddSummary("Project", projectPath);
+        string scene = PromptScene(projectPath);
+        activeScreen?.AddSummary("Scene", scene);
+        int mode = PromptChoice("Deployment mode", ["Update an existing world", "Create a new private world"]);
+        activeScreen?.AddSummary("Mode", mode == 0 ? "Update existing world" : "Create new private world");
+        int platform = PromptChoice("Target platform", ["StandaloneWindows64", "Android (Quest)"]);
+        activeScreen?.AddSummary("Platform", platform == 0 ? "StandaloneWindows64" : "Android (Quest)");
+
+        List<string> arguments = CreateArguments("deploy", username, hasTotpSecret);
+        Add(arguments, "--project", projectPath);
+        Add(arguments, "--platform", platform == 0 ? "StandaloneWindows64" : "Android");
+        Add(arguments, "--scene", scene);
+
+        string targetDescription;
+        if (mode == 0)
+        {
+            string blueprint = PromptRequired("Blueprint ID (wrld_...)", null, value => value.StartsWith("wrld_", StringComparison.Ordinal));
+            Add(arguments, "--blueprint", blueprint);
+            targetDescription = blueprint;
+            activeScreen?.AddSummary("Target", targetDescription);
+        }
+        else
+        {
+            string name = PromptRequired("World name");
+            string description = Prompt("Description");
+            string thumbnail = PromptRequired("Thumbnail path", null, File.Exists);
+            int capacity = PromptInteger("Maximum capacity", 32, 1, int.MaxValue);
+            int recommended = PromptInteger("Recommended capacity", Math.Min(16, capacity), 1, capacity);
+            string blueprintOutput = Prompt("Blueprint output file", Path.Combine(projectPath, "blueprint.txt"));
+            arguments.Add("--new");
+            Add(arguments, "--title", name);
+            if (!string.IsNullOrWhiteSpace(description)) Add(arguments, "--description", description);
+            Add(arguments, "--thumbnail", thumbnail);
+            Add(arguments, "--capacity", capacity.ToString(CultureInfo.InvariantCulture));
+            Add(arguments, "--recommended-capacity", recommended.ToString(CultureInfo.InvariantCulture));
+            if (!string.IsNullOrWhiteSpace(blueprintOutput)) Add(arguments, "--blueprint-output", blueprintOutput);
+            targetDescription = name + " (new private world)";
+            activeScreen?.AddSummary("Target", targetDescription);
+        }
+
+        bool acceptsOwnership = PromptYesNo("I certify that I have the rights to upload this content", true);
+        if (!acceptsOwnership)
+        {
+            activeScreen?.SetNotice("Deployment cancelled because content ownership was not certified.");
+            ClearSecrets(temporarySecrets);
+            return null;
+        }
+        arguments.Add("--yes");
+        activeScreen?.AddSummary("Ownership", "Confirmed");
+
+        WriteReview(
+            "Confirm the deployment plan before anything is uploaded.",
+            [
+                ("Account", username),
+                ("Auth", authenticationDescription),
+                ("Target", targetDescription),
+                ("Project", projectPath),
+                ("Scene", scene),
+                ("Platform", platform == 0 ? "StandaloneWindows64" : "Android")
+            ]);
+
+        if (!PromptYesNo("Start build and upload now", false))
+        {
+            ClearSecrets(temporarySecrets);
+            return null;
+        }
+        screen.RetainForOperation();
+        return new InteractiveWizardResult(arguments.ToArray(), temporarySecrets);
+    }
+
+    private static InteractiveWizardResult? RunMetadataWizard(
+        WizardTerminalScreen screen,
+        string username,
+        string authenticationDescription,
+        bool hasTotpSecret,
+        Dictionary<string, string> temporarySecrets)
+    {
+        WriteSection("02", "METADATA", "Choose an existing world and the metadata fields to update.");
+        string projectPath = PromptRequired("Unity project path", Directory.GetCurrentDirectory(), IsUnityProject);
+        activeScreen?.AddSummary("Project", projectPath);
+        string blueprint = PromptRequired(
+            "Blueprint ID (wrld_...)",
+            null,
+            value => value.StartsWith("wrld_", StringComparison.Ordinal));
+        activeScreen?.AddSummary("Target", blueprint);
+
+        string[] fields = ["Title", "Description", "Thumbnail", "Maximum capacity", "Recommended capacity", "Tags"];
+        HashSet<int> selected = PromptMultiChoice("Metadata fields to update", fields).ToHashSet();
+        activeScreen?.AddSummary("Changes", string.Join(", ", selected.Select(index => fields[index])));
+
+        List<string> arguments = CreateArguments("meta", username, hasTotpSecret);
+        Add(arguments, "--project", projectPath);
+        Add(arguments, "--blueprint", blueprint);
+
+        int? capacity = null;
+        if (selected.Contains(0)) Add(arguments, "--title", PromptRequired("New world title"));
+        if (selected.Contains(1)) Add(arguments, "--description", Prompt("New description (empty clears it)"));
+        if (selected.Contains(2))
+            Add(arguments, "--thumbnail", PromptRequired("New thumbnail path", null, File.Exists));
+        if (selected.Contains(3))
+        {
+            capacity = PromptInteger("New maximum capacity", 32, 1, int.MaxValue);
+            Add(arguments, "--capacity", capacity.Value.ToString(CultureInfo.InvariantCulture));
+        }
+        if (selected.Contains(4))
+        {
+            int maximum = capacity ?? int.MaxValue;
+            int recommended = PromptInteger("New recommended capacity", Math.Min(16, maximum), 1, maximum);
+            Add(arguments, "--recommended-capacity", recommended.ToString(CultureInfo.InvariantCulture));
+        }
+        if (selected.Contains(5))
+        {
+            string tagInput = PromptRequired("Tags (comma-separated)", null, IsValidTagList);
+            foreach (string tag in SplitTags(tagInput)) Add(arguments, "--tag", tag);
+        }
+
+        WriteReview(
+            "Confirm the requested metadata-only server update.",
+            [
+                ("Account", username),
+                ("Auth", authenticationDescription),
+                ("Target", blueprint),
+                ("Project", projectPath),
+                ("Changes", string.Join(", ", selected.Select(index => fields[index])))
+            ]);
+        if (!PromptYesNo("Apply these metadata changes now", true))
+        {
+            ClearSecrets(temporarySecrets);
+            return null;
+        }
+
+        screen.RetainForOperation();
+        return new InteractiveWizardResult(arguments.ToArray(), temporarySecrets);
+    }
+
+    private static InteractiveWizardResult? RunCheckWizard(
+        WizardTerminalScreen screen,
+        string username,
+        string authenticationDescription,
+        bool hasTotpSecret,
+        Dictionary<string, string> temporarySecrets)
+    {
+        WriteSection("02", "PREFLIGHT", "Choose the project, scene, and platform to inspect without uploading.");
+        string projectPath = PromptRequired("Unity project path", Directory.GetCurrentDirectory(), IsUnityProject);
+        activeScreen?.AddSummary("Project", projectPath);
+        string scene = PromptScene(projectPath);
+        activeScreen?.AddSummary("Scene", scene);
+        int platform = PromptChoice("Target platform", ["StandaloneWindows64", "Android (Quest)"]);
+        string platformName = platform == 0 ? "StandaloneWindows64" : "Android";
+        activeScreen?.AddSummary("Platform", platformName);
+
+        string blueprint;
+        while (true)
+        {
+            blueprint = Prompt("Blueprint override (blank uses the scene)");
+            if (string.IsNullOrWhiteSpace(blueprint) || blueprint.StartsWith("wrld_", StringComparison.Ordinal)) break;
+            activeScreen?.SetNotice("Enter a world ID beginning with wrld_, or leave it blank.");
+        }
+        activeScreen?.AddSummary("Target", string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint);
+
+        List<string> arguments = CreateArguments("check", username, hasTotpSecret);
+        Add(arguments, "--project", projectPath);
+        Add(arguments, "--scene", scene);
+        Add(arguments, "--platform", platformName);
+        if (!string.IsNullOrWhiteSpace(blueprint)) Add(arguments, "--blueprint", blueprint);
+
+        WriteReview(
+            "Confirm the read-only preflight plan. No bundle or server update will be created.",
+            [
+                ("Account", username),
+                ("Auth", authenticationDescription),
+                ("Target", string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint),
+                ("Project", projectPath),
+                ("Scene", scene),
+                ("Platform", platformName)
+            ]);
+        if (!PromptYesNo("Run the preflight check now", true))
+        {
+            ClearSecrets(temporarySecrets);
+            return null;
+        }
+
+        screen.RetainForOperation();
+        return new InteractiveWizardResult(arguments.ToArray(), temporarySecrets);
     }
 
     public static InteractiveTwoFactorAnswer PromptForTwoFactorChallenge(IReadOnlyList<string> methods)
@@ -219,39 +377,22 @@ public static class InteractiveDeployWizard
     }
 
     private static void WriteReview(
-        string target,
-        string project,
-        string scene,
-        string platform,
-        string username,
-        string authentication)
+        string description,
+        IReadOnlyList<(string Label, string Value)> rows)
     {
         if (activeScreen != null)
         {
-            activeScreen.SetSection("03", "REVIEW", "Confirm the deployment plan before anything is uploaded.");
-            activeScreen.ShowReview(
-            [
-                ("Account", username),
-                ("Auth", authentication),
-                ("Target", target),
-                ("Project", project),
-                ("Scene", scene),
-                ("Platform", platform)
-            ]);
+            activeScreen.SetSection("03", "REVIEW", description);
+            activeScreen.ShowReview(rows);
             return;
         }
         int width = LayoutWidth();
         Console.WriteLine();
         Console.WriteLine("  " + Paint("03", "36;1") + "  " + Paint("REVIEW", "1"));
-        Console.WriteLine(Paint("      Confirm the deployment plan before anything is uploaded.", "90"));
+        Console.WriteLine(Paint("      " + description, "90"));
         Console.WriteLine();
         Console.WriteLine("  " + Paint("╭" + new string('─', width) + "╮", "90"));
-        WriteReviewRow("Account", username, width);
-        WriteReviewRow("Auth", authentication, width);
-        WriteReviewRow("Target", target, width);
-        WriteReviewRow("Project", project, width);
-        WriteReviewRow("Scene", scene, width);
-        WriteReviewRow("Platform", platform, width);
+        foreach ((string label, string value) in rows) WriteReviewRow(label, value, width);
         Console.WriteLine("  " + Paint("╰" + new string('─', width) + "╯", "90"));
         Console.WriteLine();
     }
@@ -374,6 +515,26 @@ public static class InteractiveDeployWizard
         }
     }
 
+    private static IReadOnlyList<int> PromptMultiChoice(string label, IReadOnlyList<string> choices)
+    {
+        if (activeScreen != null) return activeScreen.ReadMultiChoice(label, choices);
+        Console.WriteLine("  │  " + Paint("?", "36;1") + " " + label);
+        for (int index = 0; index < choices.Count; index++)
+            Console.WriteLine("  │    " + Paint("[" + (index + 1) + "]", "36") + " " + choices[index]);
+        while (true)
+        {
+            string input = PromptRequired("Selections (comma-separated numbers)");
+            int[] selected = input.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(value => int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int number)
+                    ? number - 1
+                    : -1)
+                .Distinct()
+                .ToArray();
+            if (selected.Length > 0 && selected.All(index => index >= 0 && index < choices.Count)) return selected;
+            Console.WriteLine("  │  " + Paint("!", "33;1") + " Select one or more listed numbers.");
+        }
+    }
+
     private static string PromptScene(string projectPath)
     {
         IReadOnlyList<string> scenes = ProjectInspector.FindProjectScenes(projectPath);
@@ -416,6 +577,9 @@ public static class InteractiveDeployWizard
         }
     }
 
+    private static bool IsUnityProject(string projectPath) =>
+        ProjectInspector.Inspect(projectPath, null, requireScene: false).IsValid;
+
     private static int PromptInteger(string label, int defaultValue, int minimum, int maximum)
     {
         while (true)
@@ -449,6 +613,37 @@ public static class InteractiveDeployWizard
     {
         arguments.Add(option);
         arguments.Add(value);
+    }
+
+    private static List<string> CreateArguments(string command, string username, bool hasTotpSecret)
+    {
+        List<string> arguments = [command, "--tui"];
+        Add(arguments, "--login", username);
+        if (!hasTotpSecret) arguments.Add("--interactive-two-factor");
+        return arguments;
+    }
+
+    private static bool IsValidTagList(string value)
+    {
+        string[] tags = SplitTags(value);
+        return tags.Length > 0 && tags.All(tag => !tag.Contains('|'));
+    }
+
+    private static string[] SplitTags(string value) => value
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Distinct(StringComparer.Ordinal)
+        .ToArray();
+
+    private static bool IsInteractiveCommand(string value) =>
+        string.Equals(value, "deploy", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value, "meta", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value, "check", StringComparison.OrdinalIgnoreCase);
+
+    private static OperationMode ParseOperation(string value)
+    {
+        if (string.Equals(value, "meta", StringComparison.OrdinalIgnoreCase)) return OperationMode.Meta;
+        if (string.Equals(value, "check", StringComparison.OrdinalIgnoreCase)) return OperationMode.Check;
+        return OperationMode.Deploy;
     }
 
     private static bool IsTruthy(string? value) =>
