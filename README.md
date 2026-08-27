@@ -2,75 +2,75 @@
 
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
-[![CI](https://github.com/kibalab/VRCLI/actions/workflows/ci.yml/badge.svg)](https://github.com/kibalab/VRCLI/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+VRCLI builds, checks, and uploads VRChat worlds from a terminal or CI runner.
 
-VRCLI builds, validates, and uploads VRChat worlds from a terminal or CI pipeline. It supports Windows and Android (Quest) builds, existing and new worlds, metadata-only updates, and upload-readiness checks.
+> Community project; not affiliated with VRChat Inc. Only upload content you have the right to use.
 
-> VRCLI is a community project and is not affiliated with or endorsed by VRChat Inc. It relies on VRChat services and SDK behavior that may change without notice. Use it only with worlds and content you are authorized to upload.
+## Before you start
 
-## Features
+You need:
 
-- Full-screen interactive TUI for `deploy`, `meta`, and `check`
-- Append-only `--plain` output for GitHub Actions, Jenkins, and other CI systems
-- `StandaloneWindows64` and `Android` world builds
-- Existing-world deployment using either `--blueprint` or the scene's `PipelineManager`
-- New private-world creation with title, thumbnail, capacity, and tags
-- Metadata-only updates without opening Unity
-- Dry-run checks for Unity compilation and VRChat SDK upload blockers
-- Password, one-time-code, and automatic TOTP authentication
-- Structured JSON results and stable process exit codes
+- A VCC/VPM world project with VRChat Worlds SDK 3.9.0 or newer
+- The Unity version recorded in `ProjectSettings/ProjectVersion.txt`
+- [VPM CLI](https://vcc.docs.vrchat.com/vpm/cli/) available as `vpm`
+- .NET 8 SDK to build VRCLI
+- A VRChat account that can upload worlds
 
-## Requirements
+Windows is tested. macOS support is experimental: the CLI builds for Apple silicon and Intel Macs, but has not yet completed an end-to-end deployment test on a Mac. Set `UNITY_EDITOR_PATH` or use `--unity` because automatic Unity discovery currently covers Windows only.
 
-- Windows
-- A VRChat Worlds project managed by VCC/VPM
-- VRChat Worlds SDK 3.9.0 or newer
-- The Unity Editor version recorded in the project's `ProjectSettings/ProjectVersion.txt`
-- [VPM CLI](https://vcc.docs.vrchat.com/vpm/cli/) available as `vpm`, unless dependencies are already resolved and `--skip-vpm-resolve` is used
-- .NET 8 SDK to build VRCLI from source
+## Install
 
-Unity must be activated on the machine running deployment. CI runners also need a valid non-interactive Unity license setup.
+Clone the repository and publish a standalone executable.
 
-## Build from source
+Windows:
 
 ```powershell
 git clone https://github.com/kibalab/VRCLI.git
 cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj `
-  --configuration Release `
-  --runtime win-x64 `
-  --self-contained true `
-  --output artifacts/win-x64
+dotnet publish src/VRCLI/VRCLI.csproj -c Release -r win-x64 `
+  --self-contained true -o artifacts/win-x64
 ```
 
-Run `artifacts\win-x64\VRCLI.exe`, or add that directory to `PATH`.
+macOS Apple silicon (`osx-x64` for Intel):
 
-## Interactive use
+```bash
+git clone https://github.com/kibalab/VRCLI.git
+cd VRCLI
+dotnet publish src/VRCLI/VRCLI.csproj -c Release -r osx-arm64 \
+  --self-contained true -o artifacts/osx-arm64
 
-Run a command without options in a local terminal to open its TUI:
+export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Contents/MacOS/Unity"
+```
 
-```powershell
+Run `VRCLI.exe` on Windows or `./VRCLI` on macOS.
+
+## Use it interactively
+
+Run one of these commands in a local terminal:
+
+```text
 vrcli deploy
 vrcli meta
 vrcli check
 ```
 
-- `deploy` guides you through authentication, project and scene selection, ownership consent, build, and upload.
-- `meta` keeps the authenticated session open so multiple worlds can be edited without signing in again.
-- `check` performs a read-only preflight and never builds or uploads a bundle.
+- `deploy` builds and uploads a world.
+- `meta` edits existing metadata without opening Unity and keeps the login session open.
+- `check` reports compilation and SDK upload blockers without building or uploading.
 
-Press `Esc` to cancel. Press `Ctrl+C` twice to cancel an active operation.
+The TUI asks for the project, scene, account, and any missing verification code.
 
-## Non-interactive use
+## Use it in CI or scripts
 
-Store credentials in environment variables or your CI secret store:
+Keep credentials in environment variables:
 
-```powershell
-$env:VRCLI_USERNAME = "account-name-or-email"
-$env:VRCLI_PASSWORD = "account-password"
-$env:VRCLI_TOTP_SECRET = "BASE32_TOTP_SETUP_SECRET"
+```text
+VRCLI_USERNAME=account-name-or-email
+VRCLI_PASSWORD=account-password
+VRCLI_TOTP_SECRET=BASE32_TOTP_SETUP_SECRET
 ```
+
+`VRCLI_TOTP_SECRET` is the permanent authenticator setup secret, not a six-digit code. Store it as a protected CI secret and never commit it.
 
 ### Deploy an existing world
 
@@ -79,25 +79,12 @@ vrcli deploy `
   --project "C:\Unity\MyWorld" `
   --scene "Assets/Scenes/Main.unity" `
   --platform StandaloneWindows64 `
-  --yes `
-  --plain
-```
-
-When `--blueprint` is omitted, VRCLI uses the `wrld_...` Blueprint ID assigned to the selected scene's `PipelineManager`. An explicit `--blueprint wrld_...` overrides the scene value.
-
-Metadata options may be included in the same deployment:
-
-```powershell
-vrcli deploy --project "C:\Unity\MyWorld" `
-  --blueprint "wrld_..." `
-  --platform Android `
-  --title "Updated title" `
-  --capacity 40 `
-  --recommended-capacity 20 `
   --yes --plain
 ```
 
-### Create a new private world
+If `--blueprint` is omitted, VRCLI uses the Blueprint assigned to the scene's `PipelineManager`. Use `--blueprint wrld_...` to override it. Use `--platform Android` for Quest.
+
+### Create a new world
 
 ```powershell
 vrcli deploy `
@@ -113,24 +100,21 @@ vrcli deploy `
   --yes --plain
 ```
 
-The new world is created as private. VRCLI generates its Blueprint ID and can save it with `--blueprint-output` for later platform builds.
+The world is created as private. `--blueprint-output` saves its generated Blueprint for later builds.
 
 ### Update metadata only
 
 ```powershell
-vrcli meta `
-  --blueprint "wrld_..." `
+vrcli meta --blueprint "wrld_..." `
   --title "New title" `
-  --description "New description" `
   --capacity 48 `
   --recommended-capacity 24 `
-  --thumbnail "C:\Assets\thumbnail.png" `
   --plain
 ```
 
-`meta` talks directly to VRChat and does not start Unity. Only supplied fields are changed. Repeat `--tag` to merge tags into the existing tag list.
+Only supplied fields are changed. Unity is not started.
 
-### Check upload readiness
+### Check before uploading
 
 ```powershell
 vrcli check `
@@ -140,47 +124,13 @@ vrcli check `
   --plain
 ```
 
-`check` reports Unity compiler errors and warnings, project configuration problems, VRChat SDK validation results, ownership, and upload-consent status. It does not build or upload.
+This checks Unity compilation, project configuration, SDK validation, ownership, and upload consent. It never builds or uploads a bundle.
 
-## Authentication and two-factor verification
+## Deploy Windows and Android in parallel
 
-VRCLI first tries the supplied username/email and password. If the account already has a valid saved session, no two-factor prompt is shown.
-
-- Local TUI: enter a current authenticator or email code only when VRChat requests it.
-- One-off automation: pass `--two-factor-code` or set `VRCLI_TWO_FACTOR_CODE`.
-- Unattended CI: store the permanent Base32 authenticator setup secret as `VRCLI_TOTP_SECRET`. VRCLI generates the current code in memory.
-
-`VRCLI_TOTP_SECRET` is the setup secret, not the six-digit code. Treat it like a password. Never commit credentials, TOTP secrets, or `vrcli.json` files containing secrets. Prefer CI secret variables over `--password`, because command-line values may appear in shell history and process listings.
-
-## Project configuration
-
-VRCLI reads `vrcli.json` from the current directory by default, or another file supplied with `--config`:
-
-```json
-{
-  "project": "C:/Unity/MyWorld",
-  "scene": "Assets/Scenes/Main.unity",
-  "platform": "StandaloneWindows64",
-  "login": "account-name-or-email",
-  "timeout": 3600,
-  "plain": true,
-  "yes": true
-}
-```
-
-Command-line options take precedence over environment variables, which take precedence over configuration values. Passwords and TOTP secrets are intentionally not supported in `vrcli.json`.
-
-## Parallel Windows and Android deployment
-
-Use separate workspaces because Unity cannot safely open the same project directory in two processes. A CI matrix naturally provides one checkout per job:
+Use separate project workspaces. Unity cannot safely open one project directory in two processes.
 
 ```yaml
-name: Deploy VRChat world
-
-on:
-  push:
-    tags: ["world-v*"]
-
 jobs:
   deploy:
     strategy:
@@ -189,8 +139,7 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy
-        shell: pwsh
+      - shell: pwsh
         env:
           VRCLI_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
           VRCLI_PASSWORD: ${{ secrets.VRCHAT_PASSWORD }}
@@ -203,27 +152,24 @@ jobs:
           --yes --plain
 ```
 
-Each self-hosted runner must have Unity, VPM CLI, VRCLI, the required platform module, and a valid Unity license. Running both matrix jobs at the same time requires at least two available runners.
+Each runner needs Unity, VRCLI, VPM CLI, the target platform module, and a valid Unity license. Two simultaneous jobs require two available runners.
 
-## Result JSON
+## Result
 
-Every non-interactive operation prints a final JSON result:
+Non-interactive commands finish with JSON that can be read by CI:
 
 ```json
 {
   "Success": true,
   "ExitCode": 0,
   "Blueprint": "wrld_...",
-  "Created": false,
   "Platform": "StandaloneWindows64",
   "Stage": "complete",
   "Message": "World build and upload completed."
 }
 ```
 
-Exit codes: `0` success, `2` invalid arguments, `10` invalid project, `20` dependency restore failure, `30` authentication failure, `40` validation/build failure, `50` upload failure, `60` ownership failure, `70` network/API failure, `124` timeout, and `125` unexpected failure.
-
-Run `vrcli --help` for the complete option list.
+Run `vrcli --help` for every available parameter.
 
 ## License
 

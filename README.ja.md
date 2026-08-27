@@ -2,75 +2,75 @@
 
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
-[![CI](https://github.com/kibalab/VRCLI/actions/workflows/ci.yml/badge.svg)](https://github.com/kibalab/VRCLI/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+VRCLI は、ターミナルや CI ランナーから VRChat ワールドをビルド、チェック、アップロードします。
 
-VRCLI は、ターミナルや CI パイプラインから VRChat ワールドをビルド、検証、アップロードするためのツールです。Windows と Android（Quest）、既存・新規ワールド、メタデータのみの更新、アップロード準備状況のチェックに対応しています。
+> VRChat Inc. とは関係のないコミュニティプロジェクトです。使用権限を持つコンテンツのみアップロードしてください。
 
-> VRCLI はコミュニティプロジェクトであり、VRChat Inc. との関連や公式な承認はありません。予告なく変更される可能性がある VRChat のサービスおよび SDK の動作に依存しています。アップロードする権限を持つワールドとコンテンツにのみ使用してください。
+## はじめる前に
 
-## 主な機能
+次の環境が必要です。
 
-- `deploy`、`meta`、`check` 用のフルスクリーン対話型 TUI
-- GitHub Actions、Jenkins などの CI に適した追記型 `--plain` 出力
-- `StandaloneWindows64` および `Android` のワールドビルド
-- `--blueprint` またはシーンの `PipelineManager` を使った既存ワールドのデプロイ
-- タイトル、サムネイル、定員、タグを指定した新規プライベートワールドの作成
-- Unity を起動しないメタデータのみの更新
-- Unity コンパイルと VRChat SDK のアップロード阻害要因を確認する dry-run チェック
-- パスワード、ワンタイムコード、自動 TOTP 認証
-- 構造化された JSON 結果と安定したプロセス終了コード
+- VRChat Worlds SDK 3.9.0 以降を使用する VCC/VPM ワールドプロジェクト
+- `ProjectSettings/ProjectVersion.txt` に記録されたバージョンの Unity
+- `vpm` コマンドとして利用できる [VPM CLI](https://vcc.docs.vrchat.com/vpm/cli/)
+- VRCLI のビルドに必要な .NET 8 SDK
+- ワールドをアップロードできる VRChat アカウント
 
-## 必要環境
+Windows ではテスト済みです。macOS 対応は実験段階です。Apple Silicon と Intel Mac 向けに CLI をビルドできますが、Mac 上でのデプロイ全体はまだ検証していません。Unity の自動検出は現在 Windows のみ対応しているため、`UNITY_EDITOR_PATH` または `--unity` を使用してください。
 
-- Windows
-- VCC/VPM で管理された VRChat Worlds プロジェクト
-- VRChat Worlds SDK 3.9.0 以降
-- プロジェクトの `ProjectSettings/ProjectVersion.txt` に記録された Unity Editor バージョン
-- `vpm` コマンドとして利用できる [VPM CLI](https://vcc.docs.vrchat.com/vpm/cli/)。依存関係が解決済みの場合は `--skip-vpm-resolve` を使用可能
-- ソースからビルドする場合は .NET 8 SDK
+## インストール
 
-デプロイを実行するマシンで Unity がアクティベートされている必要があります。CI ランナーにも非対話で利用できる有効な Unity ライセンス設定が必要です。
+リポジトリをクローンし、スタンドアロン実行ファイルをビルドします。
 
-## ソースからビルド
+Windows:
 
 ```powershell
 git clone https://github.com/kibalab/VRCLI.git
 cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj `
-  --configuration Release `
-  --runtime win-x64 `
-  --self-contained true `
-  --output artifacts/win-x64
+dotnet publish src/VRCLI/VRCLI.csproj -c Release -r win-x64 `
+  --self-contained true -o artifacts/win-x64
 ```
 
-`artifacts\win-x64\VRCLI.exe` を実行するか、そのディレクトリを `PATH` に追加してください。
+Apple Silicon Mac（Intel は `osx-x64`）:
+
+```bash
+git clone https://github.com/kibalab/VRCLI.git
+cd VRCLI
+dotnet publish src/VRCLI/VRCLI.csproj -c Release -r osx-arm64 \
+  --self-contained true -o artifacts/osx-arm64
+
+export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Contents/MacOS/Unity"
+```
+
+Windows では `VRCLI.exe`、macOS では `./VRCLI` を実行します。
 
 ## 対話型で使う
 
-ローカルターミナルでオプションなしのコマンドを実行すると TUI が開きます。
+ローカルターミナルで目的のコマンドを実行してください。
 
-```powershell
+```text
 vrcli deploy
 vrcli meta
 vrcli check
 ```
 
-- `deploy`: 認証、プロジェクトとシーンの選択、コンテンツ権利の同意、ビルド、アップロードを案内します。
-- `meta`: 認証セッションを維持するため、再ログインせずに複数のワールドを続けて編集できます。
-- `check`: 読み取り専用の事前チェックを行い、バンドルのビルドやアップロードは行いません。
+- `deploy`: ワールドをビルドしてアップロードします。
+- `meta`: Unity を開かずに既存のメタデータを編集し、ログインセッションを維持します。
+- `check`: ビルドやアップロードを行わず、コンパイルと SDK アップロードの問題を報告します。
 
-`Esc` でキャンセルできます。実行中の処理は `Ctrl+C` を 2 回押すとキャンセルされます。
+TUI でプロジェクト、シーン、アカウント、必要な認証コードを入力できます。
 
-## 非対話で使う
+## CI またはスクリプトで使う
 
-認証情報は環境変数または CI のシークレットストアに保存してください。
+認証情報は環境変数に保存してください。
 
-```powershell
-$env:VRCLI_USERNAME = "アカウント名またはメール"
-$env:VRCLI_PASSWORD = "アカウントパスワード"
-$env:VRCLI_TOTP_SECRET = "BASE32_TOTP_セットアップシークレット"
+```text
+VRCLI_USERNAME=アカウント名またはメール
+VRCLI_PASSWORD=アカウントパスワード
+VRCLI_TOTP_SECRET=BASE32_TOTP_セットアップシークレット
 ```
+
+`VRCLI_TOTP_SECRET` は 6 桁コードではなく、永続的な認証アプリのセットアップシークレットです。保護された CI シークレットとして保存し、絶対にコミットしないでください。
 
 ### 既存ワールドをデプロイ
 
@@ -79,25 +79,12 @@ vrcli deploy `
   --project "C:\Unity\MyWorld" `
   --scene "Assets/Scenes/Main.unity" `
   --platform StandaloneWindows64 `
-  --yes `
-  --plain
-```
-
-`--blueprint` を省略すると、選択したシーンの `PipelineManager` に設定された `wrld_...` Blueprint ID を使用します。`--blueprint wrld_...` を指定するとシーンの値より優先されます。
-
-同じデプロイでメタデータも更新できます。
-
-```powershell
-vrcli deploy --project "C:\Unity\MyWorld" `
-  --blueprint "wrld_..." `
-  --platform Android `
-  --title "更新後のタイトル" `
-  --capacity 40 `
-  --recommended-capacity 20 `
   --yes --plain
 ```
 
-### 新規プライベートワールドを作成
+`--blueprint` を省略すると、シーンの `PipelineManager` に設定された Blueprint を使用します。別の Blueprint は `--blueprint wrld_...` で指定します。Quest には `--platform Android` を使用します。
+
+### 新規ワールドを作成
 
 ```powershell
 vrcli deploy `
@@ -113,24 +100,21 @@ vrcli deploy `
   --yes --plain
 ```
 
-新しいワールドはプライベートで作成されます。VRCLI が Blueprint ID を生成し、`--blueprint-output` で保存して別プラットフォームのビルドに利用できます。
+新しいワールドはプライベートで作成されます。`--blueprint-output` は生成された Blueprint を後のビルドで使えるように保存します。
 
 ### メタデータのみ更新
 
 ```powershell
-vrcli meta `
-  --blueprint "wrld_..." `
+vrcli meta --blueprint "wrld_..." `
   --title "新しいタイトル" `
-  --description "新しい説明" `
   --capacity 48 `
   --recommended-capacity 24 `
-  --thumbnail "C:\Assets\thumbnail.png" `
   --plain
 ```
 
-`meta` は VRChat と直接通信するため Unity を起動しません。指定したフィールドだけが変更されます。既存のタグ一覧に追加する場合は `--tag` を繰り返し指定してください。
+指定したフィールドだけを変更し、Unity は起動しません。
 
-### アップロード準備状況をチェック
+### アップロード前にチェック
 
 ```powershell
 vrcli check `
@@ -140,47 +124,13 @@ vrcli check `
   --plain
 ```
 
-`check` は Unity のコンパイルエラーと警告、プロジェクト設定の問題、VRChat SDK の検証結果、所有権、アップロード同意の状態を報告します。ビルドやアップロードは行いません。
-
-## ログインと二要素認証
-
-VRCLI は最初に指定されたユーザー名/メールとパスワードでログインを試みます。有効な保存済みセッションを利用できる場合、二要素認証は要求しません。
-
-- ローカル TUI: VRChat が要求した場合のみ、現在の認証アプリコードまたはメールコードを入力します。
-- 一回限りの自動化: `--two-factor-code` を指定するか、`VRCLI_TWO_FACTOR_CODE` を設定します。
-- 無人 CI: 認証アプリ登録時の永続的な Base32 セットアップシークレットを `VRCLI_TOTP_SECRET` に保存します。VRCLI が現在のコードをメモリ上で生成します。
-
-`VRCLI_TOTP_SECRET` は 6 桁のコードではなくセットアップシークレットです。パスワードと同様に扱ってください。認証情報、TOTP シークレット、またはシークレットを含む設定ファイルをコミットしないでください。`--password` の値はシェル履歴やプロセス一覧に表示される可能性があるため、CI のシークレット環境変数を推奨します。
-
-## プロジェクト設定ファイル
-
-VRCLI はデフォルトで現在のディレクトリにある `vrcli.json` を読み込みます。別のファイルは `--config` で指定できます。
-
-```json
-{
-  "project": "C:/Unity/MyWorld",
-  "scene": "Assets/Scenes/Main.unity",
-  "platform": "StandaloneWindows64",
-  "login": "アカウント名またはメール",
-  "timeout": 3600,
-  "plain": true,
-  "yes": true
-}
-```
-
-コマンドラインオプション、環境変数、設定ファイルの順に優先されます。パスワードと TOTP シークレットは意図的に `vrcli.json` ではサポートされません。
+Unity のコンパイル、プロジェクト設定、SDK 検証、所有権、アップロード同意を確認します。バンドルのビルドやアップロードは行いません。
 
 ## Windows と Android の並列デプロイ
 
-Unity は同じプロジェクトディレクトリを 2 つのプロセスから安全に開けないため、別々のワークスペースを使用してください。CI マトリックスならジョブごとに独立したチェックアウトを用意できます。
+別々のプロジェクトワークスペースを使用してください。Unity は 1 つのプロジェクトディレクトリを 2 つのプロセスから安全に開けません。
 
 ```yaml
-name: Deploy VRChat world
-
-on:
-  push:
-    tags: ["world-v*"]
-
 jobs:
   deploy:
     strategy:
@@ -189,8 +139,7 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy
-        shell: pwsh
+      - shell: pwsh
         env:
           VRCLI_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
           VRCLI_PASSWORD: ${{ secrets.VRCHAT_PASSWORD }}
@@ -203,27 +152,24 @@ jobs:
           --yes --plain
 ```
 
-各セルフホステッドランナーには Unity、VPM CLI、VRCLI、対象プラットフォームモジュール、有効な Unity ライセンスが必要です。2 つのジョブを同時に実行するには、少なくとも 2 台の利用可能なランナーが必要です。
+各ランナーには Unity、VRCLI、VPM CLI、対象プラットフォームモジュール、有効な Unity ライセンスが必要です。2 つのジョブを同時に実行するには、利用可能なランナーが 2 台必要です。
 
-## 結果 JSON
+## 結果
 
-すべての非対話操作は最後に JSON 結果を出力します。
+非対話コマンドは CI で読み取れる JSON を最後に出力します。
 
 ```json
 {
   "Success": true,
   "ExitCode": 0,
   "Blueprint": "wrld_...",
-  "Created": false,
   "Platform": "StandaloneWindows64",
   "Stage": "complete",
   "Message": "World build and upload completed."
 }
 ```
 
-終了コード: `0` 成功、`2` 不正な引数、`10` 不正なプロジェクト、`20` 依存関係の復元失敗、`30` 認証失敗、`40` 検証/ビルド失敗、`50` アップロード失敗、`60` 所有権失敗、`70` ネットワーク/API 失敗、`124` タイムアウト、`125` 予期しない失敗。
-
-全オプションは `vrcli --help` で確認できます。
+すべてのパラメータは `vrcli --help` で確認できます。
 
 ## ライセンス
 
