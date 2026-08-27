@@ -126,76 +126,78 @@ public static class InteractiveWizard
         bool hasTotpSecret,
         Dictionary<string, string> temporarySecrets)
     {
-        WriteSection("02", "DEPLOYMENT", "Choose the project, target world, scene, and platform.");
-        string projectPath = PromptRequired("Unity project path", Directory.GetCurrentDirectory(), IsUnityProject);
-        activeScreen?.AddSummary("Project", projectPath);
-        string scene = PromptScene(projectPath);
-        activeScreen?.AddSummary("Scene", scene);
-        int mode = PromptChoice("Deployment mode", ["Update an existing world", "Create a new private world"]);
-        activeScreen?.AddSummary("Mode", mode == 0 ? "Update existing world" : "Create new private world");
-        int platform = PromptChoice("Target platform", ["StandaloneWindows64", "Android (Quest)"]);
-        activeScreen?.AddSummary("Platform", platform == 0 ? "StandaloneWindows64" : "Android (Quest)");
-
-        List<string> arguments = CreateArguments("deploy", username, hasTotpSecret);
-        Add(arguments, "--project", projectPath);
-        Add(arguments, "--platform", platform == 0 ? "StandaloneWindows64" : "Android");
-        Add(arguments, "--scene", scene);
-
-        string targetDescription;
-        if (mode == 0)
+        while (true)
         {
-            string blueprint = PromptRequired("Blueprint ID (wrld_...)", null, value => value.StartsWith("wrld_", StringComparison.Ordinal));
-            Add(arguments, "--blueprint", blueprint);
-            targetDescription = blueprint;
-            activeScreen?.AddSummary("Target", targetDescription);
-        }
-        else
-        {
-            string name = PromptRequired("World name");
-            string description = Prompt("Description");
-            string thumbnail = PromptRequired("Thumbnail path", null, File.Exists);
-            int capacity = PromptInteger("Maximum capacity", 32, 1, int.MaxValue);
-            int recommended = PromptInteger("Recommended capacity", Math.Min(16, capacity), 1, capacity);
-            string blueprintOutput = Prompt("Blueprint output file", Path.Combine(projectPath, "blueprint.txt"));
-            arguments.Add("--new");
-            Add(arguments, "--title", name);
-            if (!string.IsNullOrWhiteSpace(description)) Add(arguments, "--description", description);
-            Add(arguments, "--thumbnail", thumbnail);
-            Add(arguments, "--capacity", capacity.ToString(CultureInfo.InvariantCulture));
-            Add(arguments, "--recommended-capacity", recommended.ToString(CultureInfo.InvariantCulture));
-            if (!string.IsNullOrWhiteSpace(blueprintOutput)) Add(arguments, "--blueprint-output", blueprintOutput);
-            targetDescription = name + " (new private world)";
-            activeScreen?.AddSummary("Target", targetDescription);
-        }
+            WriteSection("02", "DEPLOYMENT", "Choose the project, target world, scene, and platform.");
+            string projectPath = PromptRequired("Unity project path", Directory.GetCurrentDirectory(), IsUnityProject);
+            activeScreen?.AddSummary("Project", projectPath);
+            string scene = PromptScene(projectPath);
+            activeScreen?.AddSummary("Scene", scene);
+            int mode = PromptChoice("Deployment mode", ["Update an existing world", "Create a new private world"]);
+            activeScreen?.AddSummary("Mode", mode == 0 ? "Update existing world" : "Create new private world");
+            int platform = PromptChoice("Target platform", ["StandaloneWindows64", "Android (Quest)"]);
+            activeScreen?.AddSummary("Platform", platform == 0 ? "StandaloneWindows64" : "Android (Quest)");
 
-        bool acceptsOwnership = PromptYesNo("I certify that I have the rights to upload this content", true);
-        if (!acceptsOwnership)
-        {
-            activeScreen?.SetNotice("Deployment cancelled because content ownership was not certified.");
-            ClearSecrets(temporarySecrets);
-            return null;
-        }
-        arguments.Add("--yes");
-        activeScreen?.AddSummary("Ownership", "Confirmed");
+            List<string> arguments = CreateArguments("deploy", username, hasTotpSecret);
+            Add(arguments, "--project", projectPath);
+            Add(arguments, "--platform", platform == 0 ? "StandaloneWindows64" : "Android");
+            Add(arguments, "--scene", scene);
 
-        WriteReview(
-            "Confirm the deployment plan before anything is uploaded.",
-            [
-                ("Account", username),
-                ("Auth", authenticationDescription),
-                ("Target", targetDescription),
-                ("Project", projectPath),
-                ("Scene", scene),
-                ("Platform", platform == 0 ? "StandaloneWindows64" : "Android")
-            ]);
+            string targetDescription;
+            if (mode == 0)
+            {
+                string blueprint = PromptRequired("Blueprint ID (wrld_...)", null, value => value.StartsWith("wrld_", StringComparison.Ordinal));
+                Add(arguments, "--blueprint", blueprint);
+                targetDescription = blueprint;
+                activeScreen?.AddSummary("Target", targetDescription);
+            }
+            else
+            {
+                string name = PromptRequired("World name");
+                string description = Prompt("Description");
+                string thumbnail = PromptRequired("Thumbnail path", null, File.Exists);
+                int capacity = PromptInteger("Maximum capacity", 32, 1, int.MaxValue);
+                int recommended = PromptInteger("Recommended capacity", Math.Min(16, capacity), 1, capacity);
+                string blueprintOutput = Prompt("Blueprint output file", Path.Combine(projectPath, "blueprint.txt"));
+                arguments.Add("--new");
+                Add(arguments, "--title", name);
+                if (!string.IsNullOrWhiteSpace(description)) Add(arguments, "--description", description);
+                Add(arguments, "--thumbnail", thumbnail);
+                Add(arguments, "--capacity", capacity.ToString(CultureInfo.InvariantCulture));
+                Add(arguments, "--recommended-capacity", recommended.ToString(CultureInfo.InvariantCulture));
+                if (!string.IsNullOrWhiteSpace(blueprintOutput)) Add(arguments, "--blueprint-output", blueprintOutput);
+                targetDescription = name + " (new private world)";
+                activeScreen?.AddSummary("Target", targetDescription);
+            }
 
-        if (!PromptYesNo("Start build and upload now", false))
-        {
-            ClearSecrets(temporarySecrets);
-            return null;
+            bool acceptsOwnership = PromptYesNo("I certify that I have the rights to upload this content", true);
+            if (!acceptsOwnership)
+            {
+                activeScreen?.SetNotice("Deployment cancelled because content ownership was not certified.");
+                ClearSecrets(temporarySecrets);
+                return null;
+            }
+            arguments.Add("--yes");
+            activeScreen?.AddSummary("Ownership", "Confirmed");
+
+            WriteReview(
+                "Confirm the deployment plan before anything is uploaded.",
+                [
+                    ("Account", username),
+                    ("Auth", authenticationDescription),
+                    ("Target", targetDescription),
+                    ("Project", projectPath),
+                    ("Scene", scene),
+                    ("Platform", platform == 0 ? "StandaloneWindows64" : "Android")
+                ]);
+
+            if (!PromptYesNo("Start build and upload now", true))
+            {
+                continue;
+            }
+            screen.RetainForOperation();
+            return new InteractiveWizardResult(arguments.ToArray(), temporarySecrets);
         }
-        screen.RetainForOperation();
-        return new InteractiveWizardResult(arguments.ToArray(), temporarySecrets);
     }
 
     private static InteractiveWizardResult? RunCheckWizard(
