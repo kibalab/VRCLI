@@ -53,7 +53,7 @@ namespace KibaLab.WorldDeployment.Editor
             string blueprintId = string.IsNullOrWhiteSpace(request.BlueprintId)
                 ? pipeline.blueprintId
                 : request.BlueprintId;
-            report.WorldId = string.IsNullOrWhiteSpace(blueprintId) ? null : blueprintId;
+            report.Blueprint = string.IsNullOrWhiteSpace(blueprintId) ? null : blueprintId;
             if (!string.IsNullOrWhiteSpace(request.BlueprintId)) pipeline.blueprintId = request.BlueprintId;
 
             if (!UpdateLayers.AreLayersSetup())
@@ -168,7 +168,7 @@ namespace KibaLab.WorldDeployment.Editor
         public IReadOnlyList<string> Errors => errors;
         public IReadOnlyList<string> Warnings => warnings;
         public IReadOnlyList<string> Information => information;
-        public string WorldId { get; set; }
+        public string Blueprint { get; set; }
         public bool Success => errors.Count == 0;
 
         public void AddError(string message) => Add(errors, message);

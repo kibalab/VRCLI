@@ -9,7 +9,7 @@ namespace KibaLab.WorldDeployment.Editor
     {
         public bool Success;
         public int ExitCode;
-        public string WorldId;
+        public string Blueprint;
         public bool Created;
         public string Platform;
         public string Stage;
@@ -22,7 +22,7 @@ namespace KibaLab.WorldDeployment.Editor
             string resultFile,
             bool success,
             int exitCode,
-            string worldId,
+            string blueprint,
             bool created,
             string platform,
             string stage,
@@ -35,7 +35,7 @@ namespace KibaLab.WorldDeployment.Editor
             {
                 Success = success,
                 ExitCode = exitCode,
-                WorldId = worldId,
+                Blueprint = blueprint,
                 Created = created,
                 Platform = platform,
                 Stage = stage,

@@ -222,11 +222,11 @@ public sealed class DeploymentApplication(
             if (bridgeResult != null)
             {
                 await output.WriteLineAsync(JsonSerializer.Serialize(bridgeResult, ResultJsonOptions));
-                if (bridgeResult.Success && options.BlueprintOutputPath != null && !string.IsNullOrWhiteSpace(bridgeResult.WorldId))
+                if (bridgeResult.Success && options.BlueprintOutputPath != null && !string.IsNullOrWhiteSpace(bridgeResult.Blueprint))
                 {
                     try
                     {
-                        await BlueprintOutputWriter.WriteAsync(options.BlueprintOutputPath, bridgeResult.WorldId);
+                        await BlueprintOutputWriter.WriteAsync(options.BlueprintOutputPath, bridgeResult.Blueprint);
                         await output.WriteLineAsync($"[VRCLI] Blueprint ID written to {options.BlueprintOutputPath}");
                     }
                     catch (Exception exception)
@@ -423,7 +423,7 @@ VRCLI commands and parameters
 public sealed record DeploymentResult(
     bool Success,
     int ExitCode,
-    string? WorldId,
+    string? Blueprint,
     bool Created,
     string? Platform,
     string? Stage,

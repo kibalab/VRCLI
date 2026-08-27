@@ -49,7 +49,7 @@ namespace KibaLab.WorldDeployment.Editor
                         request.ResultFile,
                         report.Success,
                         checkExitCode,
-                        report.WorldId,
+                        report.Blueprint,
                         false,
                         request.Platform,
                         "check",
@@ -66,9 +66,9 @@ namespace KibaLab.WorldDeployment.Editor
                     return;
                 }
 
-                string deployedWorldId = await WorldDeployer.DeployAsync(request, scenePath);
-                DeploymentResult.Write(request.ResultFile, true, 0, deployedWorldId, request.IsNew, request.Platform, "complete", request.IsNew ? "World created, built, and uploaded." : "World build and upload completed.");
-                DeploymentLog.Phase("COMPLETE", "Deployment completed successfully for " + deployedWorldId + ".");
+                string deployedBlueprint = await WorldDeployer.DeployAsync(request, scenePath);
+                DeploymentResult.Write(request.ResultFile, true, 0, deployedBlueprint, request.IsNew, request.Platform, "complete", request.IsNew ? "World created, built, and uploaded." : "World build and upload completed.");
+                DeploymentLog.Phase("COMPLETE", "Deployment completed successfully for " + deployedBlueprint + ".");
                 EditorApplication.Exit(0);
             }
             catch (Exception exception)
