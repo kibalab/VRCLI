@@ -12,6 +12,8 @@
 
 VRCLI builds, checks, and uploads VRChat worlds from a terminal or CI runner.
 
+> Dependency notice: VRCLI is an automation layer, not a standalone world build or upload implementation. It depends entirely on a compatible Unity Editor and the VRChat Worlds SDK installed in the target project; it does not replace or redistribute either product.
+>
 > Community project; not affiliated with VRChat Inc. Only upload content you have the right to use.
 
 ## Before you start
