@@ -36,6 +36,7 @@ namespace KibaLab.WorldDeployment.Editor
             if (pipeline == null) pipeline = Object.FindObjectOfType<PipelineManager>();
             if (pipeline == null) throw new InvalidOperationException("PipelineManager was not found in the selected scene.");
             DeploymentLog.Info("PREPARE", "VRC_SceneDescriptor and PipelineManager were found.");
+            DeploymentLog.Phase("TARGET", "Selected the world descriptor from the requested scene.");
 
             if (!request.IsNew)
             {

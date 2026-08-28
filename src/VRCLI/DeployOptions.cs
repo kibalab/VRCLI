@@ -21,6 +21,7 @@ public sealed record DeployOptions(
     string Password,
     BuildPlatform Platform,
     string? ScenePath,
+    string? TargetPath,
     string? UnityPath,
     string? TwoFactorCode,
     string? TwoFactorMethod,

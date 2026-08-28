@@ -21,7 +21,7 @@ namespace KibaLab.WorldDeployment.Editor
             DeploymentLog.Phase("PREPARE", "Preparing the avatar scene for the VRChat SDK builder.");
             ContentScene.ValidatePlatform(request.Platform);
             ContentScene.Open(scenePath);
-            AvatarTarget target = AvatarTarget.Find(request.BlueprintId);
+            AvatarTarget target = await AvatarTarget.FindAsync(request);
             string blueprint = target.Pipeline.blueprintId;
             bool created = string.IsNullOrWhiteSpace(blueprint);
             if (!created && !blueprint.StartsWith("avtr_", StringComparison.Ordinal))

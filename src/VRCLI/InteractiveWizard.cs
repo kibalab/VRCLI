@@ -289,7 +289,7 @@ public static class InteractiveWizard
                         thumbnail = PromptRequired("Thumbnail path", string.IsNullOrWhiteSpace(thumbnail) ? null : thumbnail, File.Exists);
                         blueprintOutput = Prompt("Blueprint output file", string.IsNullOrWhiteSpace(blueprintOutput) ? Path.Combine(projectPath, "blueprint.txt") : blueprintOutput);
                     }
-                    activeScreen?.AddSummary("Target", avatarIsNew ? name + " (new private avatar)" : string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint);
+                    activeScreen?.AddSummary("Target", avatarIsNew ? name + " (new private avatar)" : string.IsNullOrWhiteSpace(blueprint) ? "Auto-select after Unity opens" : blueprint);
                 }
             }
             if (editSection is 0 or 3)
@@ -315,7 +315,7 @@ public static class InteractiveWizard
                     Add(arguments, "--thumbnail", thumbnail);
                     if (!string.IsNullOrWhiteSpace(blueprintOutput)) Add(arguments, "--blueprint-output", blueprintOutput);
                 }
-                targetDescription = avatarIsNew ? name + " (new private avatar)" : string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint;
+                targetDescription = avatarIsNew ? name + " (new private avatar)" : string.IsNullOrWhiteSpace(blueprint) ? "Auto-select after Unity opens" : blueprint;
             }
             else if (mode == 0)
             {
@@ -409,7 +409,9 @@ public static class InteractiveWizard
                 blueprint = PromptOptionalBlueprint(contentType);
                 activeScreen?.AddSummary(
                     "Target",
-                    string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint);
+                    string.IsNullOrWhiteSpace(blueprint)
+                        ? contentType == ProjectContentType.Avatar ? "Auto-select after Unity opens" : "Scene PipelineManager"
+                        : blueprint);
             }
             if (editSection is 0 or 3)
             {
@@ -430,7 +432,9 @@ public static class InteractiveWizard
                 [
                     ("Account", username),
                     ("Auth", authenticationDescription),
-                    ("Target", string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint),
+                    ("Target", string.IsNullOrWhiteSpace(blueprint)
+                        ? contentType == ProjectContentType.Avatar ? "Auto-select after Unity opens" : "Scene PipelineManager"
+                        : blueprint),
                     ("Project", projectPath),
                     ("Scene", scene!),
                     ("Platform", platformName)
@@ -455,7 +459,9 @@ public static class InteractiveWizard
         string prefix = contentType == ProjectContentType.World ? "wrld_" : "avtr_";
         while (true)
         {
-            string blueprint = Prompt("Blueprint override (blank uses the scene)");
+            string blueprint = Prompt(contentType == ProjectContentType.Avatar
+                ? "Blueprint (blank auto-selects the scene avatar)"
+                : "Blueprint override (blank uses the scene)");
             if (string.IsNullOrWhiteSpace(blueprint) || blueprint.StartsWith(prefix, StringComparison.Ordinal))
                 return blueprint;
             activeScreen?.SetNotice("Enter a " + contentType.ToString().ToLowerInvariant() + " ID beginning with " + prefix + ", or leave it blank.");

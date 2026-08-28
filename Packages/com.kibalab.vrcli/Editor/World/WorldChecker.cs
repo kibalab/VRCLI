@@ -46,6 +46,7 @@ namespace KibaLab.WorldDeployment.Editor
                 report.AddError("PipelineManager was not found in the selected scene.");
                 return report;
             }
+            DeploymentLog.Phase("TARGET", "Selected the world descriptor from the requested scene.");
 
             string blueprintId = string.IsNullOrWhiteSpace(request.BlueprintId)
                 ? pipeline.blueprintId

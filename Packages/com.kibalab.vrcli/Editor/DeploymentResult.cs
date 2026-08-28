@@ -18,6 +18,7 @@ namespace KibaLab.WorldDeployment.Editor
         public string[] Errors;
         public string[] Warnings;
         public string[] Information;
+        public ContentTarget[] Targets;
 
         public static void Write(
             string resultFile,
@@ -31,7 +32,8 @@ namespace KibaLab.WorldDeployment.Editor
             string message,
             string[] errors = null,
             string[] warnings = null,
-            string[] information = null)
+            string[] information = null,
+            ContentTarget[] targets = null)
         {
             DeploymentResult result = new DeploymentResult
             {
@@ -45,7 +47,8 @@ namespace KibaLab.WorldDeployment.Editor
                 Message = message,
                 Errors = errors,
                 Warnings = warnings,
-                Information = information
+                Information = information,
+                Targets = targets
             };
 
             string directory = Path.GetDirectoryName(resultFile);

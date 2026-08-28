@@ -21,7 +21,15 @@ namespace KibaLab.WorldDeployment.Editor
             AvatarTarget target;
             try
             {
-                target = AvatarTarget.Find(request.BlueprintId);
+                target = await AvatarTarget.FindAsync(request);
+            }
+            catch (TargetSelectionException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception exception)
             {

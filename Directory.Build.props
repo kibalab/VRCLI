@@ -4,6 +4,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <VersionPrefix>0.17.0</VersionPrefix>
+    <VersionPrefix>0.18.0</VersionPrefix>
   </PropertyGroup>
 </Project>

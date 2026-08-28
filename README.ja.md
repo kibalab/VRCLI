@@ -59,8 +59,8 @@ Windows では `VRCLI.exe`、macOS では `./VRCLI` を実行します。
 `Directory.Build.props` の `VersionPrefix` を変更してコミットし、一致する `vX.Y.Z` タグをプッシュします。
 
 ```bash
-git tag -a v0.17.0 -m "VRCLI v0.17.0"
-git push origin v0.17.0
+git tag -a v0.18.0 -m "VRCLI v0.18.0"
+git push origin v0.18.0
 ```
 
 GitHub Actions がタグ時点のコミットをテストし、自己完結型の Windows／macOS アーカイブと SHA-256 チェックサムを GitHub Release に公開します。タグが `VersionPrefix` と一致しない場合、リリースを作成せず失敗します。
@@ -142,11 +142,12 @@ vrcli deploy `
 vrcli deploy `
   --project "C:\Unity\MyAvatar" `
   --scene "Assets/Avatar.unity" `
+  --target "Avatars/KIBA_" `
   --platform StandaloneWindows64 `
   --yes --plain
 ```
 
-VRCLI は Avatars SDK を判定し、シーンのアバターを選択します。既存アバターは `PipelineManager` の Blueprint を使用し、`--blueprint avtr_...` で選択または上書きできます。Blueprint がない場合は新しいプライベートアバターとして作成され、`--title`、`--thumbnail`、`--yes` が必要です。`--description`、`--tag`、`--blueprint-output` も使用できます。複数のアバターがあるシーンでは、既存アバターの `avtr_` Blueprint を指定するか、アップロード対象を 1 つにしてください。
+VRCLI は Avatars SDK を判定し、シーンのアバターを選択します。`--target` はアバター GameObject の正確な Unity Hierarchy パス、`--blueprint avtr_...` はサーバー上の既存アバターを識別します。どちらか一方で複数のアバターから対象を選べ、両方を指定する場合は同じアバターを示す必要があります。どちらも省略し、シーン内に 1 体だけなら自動選択します。複数ある場合、対話実行では選択画面を表示し、`--plain` と `--json` では安全に停止して `Targets` 候補一覧を返します。選択したアバターに Blueprint がなければ新しいプライベートアバターとして作成され、`--title`、`--thumbnail`、`--yes` が必要です。
 
 ### メタデータのみ更新
 
@@ -216,6 +217,8 @@ jobs:
   "Message": "World build and upload completed."
 }
 ```
+
+アバター選択が曖昧な場合、非対話実行の失敗結果には各候補の `Name`、Hierarchy `Selector`、任意の `Blueprint` を含む `Targets` が返ります。選ぶ `Selector` を `--target` に指定してください。
 
 すべてのパラメータは `vrcli --help` で確認できます。
 

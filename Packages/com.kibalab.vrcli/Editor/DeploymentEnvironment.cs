@@ -18,6 +18,9 @@ namespace KibaLab.WorldDeployment
         public const string ResultFile = "VRCLI_RESULT_FILE";
         public const string OwnershipAccepted = "VRCLI_ACCEPT_CONTENT_OWNERSHIP";
         public const string Scene = "VRCLI_SCENE";
+        public const string Target = "VRCLI_TARGET";
+        public const string TargetRequestFile = "VRCLI_TARGET_REQUEST_FILE";
+        public const string TargetResponseFile = "VRCLI_TARGET_RESPONSE_FILE";
         public const string Title = "VRCLI_WORLD_NAME";
         public const string Description = "VRCLI_WORLD_DESCRIPTION";
         public const string Thumbnail = "VRCLI_THUMBNAIL";

@@ -59,8 +59,8 @@ Windows에서는 `VRCLI.exe`, macOS에서는 `./VRCLI`를 실행합니다.
 `Directory.Build.props`의 `VersionPrefix`를 변경하고 커밋한 뒤, 일치하는 `vX.Y.Z` 태그를 푸시합니다.
 
 ```bash
-git tag -a v0.17.0 -m "VRCLI v0.17.0"
-git push origin v0.17.0
+git tag -a v0.18.0 -m "VRCLI v0.18.0"
+git push origin v0.18.0
 ```
 
 GitHub Actions가 태그 시점의 커밋을 테스트하고, 자체 포함된 Windows 및 macOS 압축 파일과 SHA-256 체크섬을 GitHub Release에 게시합니다. 태그와 `VersionPrefix`가 다르면 릴리스를 만들지 않고 실패합니다.
@@ -142,11 +142,12 @@ vrcli deploy `
 vrcli deploy `
   --project "C:\Unity\MyAvatar" `
   --scene "Assets/Avatar.unity" `
+  --target "Avatars/KIBA_" `
   --platform StandaloneWindows64 `
   --yes --plain
 ```
 
-VRCLI가 Avatars SDK를 판별하고 씬의 아바타를 선택합니다. 기존 아바타는 `PipelineManager`의 Blueprint를 사용하며 `--blueprint avtr_...`로 선택하거나 덮어쓸 수 있습니다. Blueprint가 없으면 비공개 신규 아바타로 생성하며 `--title`, `--thumbnail`, `--yes`가 필요합니다. `--description`, `--tag`, `--blueprint-output`도 아바타에서 사용할 수 있습니다. 여러 아바타가 있는 씬은 기존 아바타의 `avtr_` Blueprint를 지정하거나 업로드 대상을 하나만 남겨야 합니다.
+VRCLI가 Avatars SDK를 판별하고 씬의 아바타를 선택합니다. `--target`은 아바타 GameObject의 정확한 Unity Hierarchy 경로이고, `--blueprint avtr_...`는 서버에 존재하는 아바타를 식별합니다. 둘 중 하나로 여러 아바타 중 대상을 고를 수 있으며, 함께 쓰면 같은 아바타를 가리켜야 합니다. 둘 다 생략했을 때 씬에 아바타가 하나면 자동 선택하고, 여러 개면 대화형 실행에서는 선택 목록을 표시합니다. `--plain`과 `--json`에서는 안전하게 중단하고 `Targets` 후보 목록을 반환합니다. 선택한 아바타에 Blueprint가 없으면 비공개 신규 아바타로 생성하며 `--title`, `--thumbnail`, `--yes`가 필요합니다.
 
 ### 메타데이터만 갱신
 
@@ -216,6 +217,8 @@ jobs:
   "Message": "World build and upload completed."
 }
 ```
+
+아바타 선택이 모호하면 비대화형 실패 결과의 `Targets`에 각 후보의 `Name`, Hierarchy `Selector`, 선택적 `Blueprint`가 포함됩니다. 원하는 `Selector`를 `--target`으로 지정하세요.
 
 전체 파라미터는 `vrcli --help`에서 확인할 수 있습니다.
 

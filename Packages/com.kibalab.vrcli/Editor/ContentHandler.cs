@@ -26,6 +26,30 @@ namespace KibaLab.WorldDeployment.Editor
         public string Message { get; set; }
     }
 
+    [Serializable]
+    internal sealed class ContentTarget
+    {
+        public string Name;
+        public string Selector;
+        public string Blueprint;
+    }
+
+    [Serializable]
+    internal sealed class TargetSelectionRequest
+    {
+        public ContentTarget[] Targets;
+    }
+
+    internal sealed class TargetSelectionException : Exception
+    {
+        public ContentTarget[] Targets { get; private set; }
+
+        public TargetSelectionException(string message, ContentTarget[] targets) : base(message)
+        {
+            Targets = targets;
+        }
+    }
+
     internal sealed class CheckReport
     {
         private readonly List<string> errors = new List<string>();

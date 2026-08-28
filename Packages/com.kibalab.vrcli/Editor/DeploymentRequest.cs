@@ -27,6 +27,9 @@ namespace KibaLab.WorldDeployment.Editor
         public string TwoFactorToken { get; private set; }
         public string Platform { get; private set; }
         public string ScenePath { get; private set; }
+        public string TargetPath { get; private set; }
+        public string TargetRequestFile { get; private set; }
+        public string TargetResponseFile { get; private set; }
         public string ResultFile { get; private set; }
         public bool OwnershipAccepted { get; private set; }
         public bool UpdateTitle { get; private set; }
@@ -57,6 +60,9 @@ namespace KibaLab.WorldDeployment.Editor
                 Platform = Require(DeploymentEnvironment.Platform),
                 ResultFile = Require(DeploymentEnvironment.ResultFile),
                 ScenePath = Environment.GetEnvironmentVariable(DeploymentEnvironment.Scene),
+                TargetPath = Environment.GetEnvironmentVariable(DeploymentEnvironment.Target),
+                TargetRequestFile = Environment.GetEnvironmentVariable(DeploymentEnvironment.TargetRequestFile),
+                TargetResponseFile = Environment.GetEnvironmentVariable(DeploymentEnvironment.TargetResponseFile),
                 OwnershipAccepted = string.Equals(
                     Environment.GetEnvironmentVariable(DeploymentEnvironment.OwnershipAccepted),
                     "true",

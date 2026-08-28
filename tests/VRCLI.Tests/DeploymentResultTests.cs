@@ -41,4 +41,29 @@ public sealed class DeploymentResultTests
         Assert.Contains("\"Blueprint\":\"avtr_example\"", json);
         Assert.Contains("\"ContentType\":\"Avatar\"", json);
     }
+
+    [Fact]
+    public void SerializesAvatarCandidatesForNonInteractiveSelection()
+    {
+        DeploymentResult result = new(
+            false,
+            ExitCodes.InvalidArguments,
+            null,
+            false,
+            "StandaloneWindows64",
+            "target-selection",
+            "Multiple avatars were found.",
+            ContentType: "Avatar",
+            Targets:
+            [
+                new ContentTarget("KIBA_", "Avatars/KIBA_", "avtr_existing"),
+                new ContentTarget("Fallback", "Avatars/Fallback", null)
+            ]);
+
+        string json = JsonSerializer.Serialize(result);
+
+        Assert.Contains("\"Selector\":\"Avatars/KIBA_\"", json);
+        Assert.Contains("\"Blueprint\":\"avtr_existing\"", json);
+        Assert.Contains("\"Selector\":\"Avatars/Fallback\"", json);
+    }
 }

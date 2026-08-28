@@ -80,6 +80,38 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
+    public void ParsesAvatarHierarchyTarget()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+        [
+            "deploy",
+            "--target", "Avatars/KIBA_",
+            "--login", "kibalab",
+            "--password", "secret",
+            "--plain"
+        ]);
+
+        Assert.Null(result.Error);
+        Assert.Equal("Avatars/KIBA_", result.Options?.TargetPath);
+    }
+
+    [Fact]
+    public void MetadataCommandRejectsAvatarTarget()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+        [
+            "meta",
+            "--blueprint", "wrld_example",
+            "--target", "Avatars/KIBA_",
+            "--title", "Changed",
+            "--login", "kibalab",
+            "--password", "secret"
+        ]);
+
+        Assert.Contains("deploy or check", result.Error);
+    }
+
+    [Fact]
     public void CheckCommandRejectsMetadataChanges()
     {
         ParseResult result = new CommandLineParser().Parse(
@@ -163,8 +195,9 @@ public sealed class CommandLineParserTests
         string config = Path.Combine(directory, "vrcli.json");
         File.WriteAllText(config, """
             {
-              "blueprint": "wrld_from_config",
+              "blueprint": "avtr_from_config",
               "scene": "Assets/Scenes/Main.unity",
+              "target": "Avatars/KIBA_",
               "platform": "Android",
               "plain": true,
               "yes": true
@@ -179,8 +212,9 @@ public sealed class CommandLineParserTests
 
             Assert.Null(result.Error);
             Assert.Equal(directory, result.Options?.ProjectPath);
-            Assert.Equal("wrld_from_config", result.Options?.BlueprintId);
+            Assert.Equal("avtr_from_config", result.Options?.BlueprintId);
             Assert.Equal("Assets/Scenes/Main.unity", result.Options?.ScenePath);
+            Assert.Equal("Avatars/KIBA_", result.Options?.TargetPath);
             Assert.Equal(BuildPlatform.Android, result.Options?.Platform);
             Assert.Equal(TerminalMode.Plain, result.Options?.TerminalMode);
             Assert.True(result.Options?.OwnershipAccepted);

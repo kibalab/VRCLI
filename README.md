@@ -59,8 +59,8 @@ Run `VRCLI.exe` on Windows or `./VRCLI` on macOS.
 Set `VersionPrefix` in `Directory.Build.props`, commit it, then push the matching `vX.Y.Z` tag:
 
 ```bash
-git tag -a v0.17.0 -m "VRCLI v0.17.0"
-git push origin v0.17.0
+git tag -a v0.18.0 -m "VRCLI v0.18.0"
+git push origin v0.18.0
 ```
 
 GitHub Actions tests the tagged commit and publishes self-contained Windows and macOS archives with SHA-256 checksums to a GitHub Release. A tag that does not match `VersionPrefix` fails without creating a release.
@@ -142,11 +142,12 @@ The world is created as private. `--blueprint-output` saves its generated Bluepr
 vrcli deploy `
   --project "C:\Unity\MyAvatar" `
   --scene "Assets/Avatar.unity" `
+  --target "Avatars/KIBA_" `
   --platform StandaloneWindows64 `
   --yes --plain
 ```
 
-VRCLI detects the Avatars SDK and selects the scene avatar. An existing avatar uses its `PipelineManager` Blueprint; `--blueprint avtr_...` can select or override it. If the selected avatar has no Blueprint, VRCLI creates a private avatar and requires `--title`, `--thumbnail`, and `--yes`. `--description`, `--tag`, and `--blueprint-output` also work for avatars. A scene with multiple avatars requires an `avtr_` Blueprint override unless only one upload target remains.
+VRCLI detects the Avatars SDK and selects the scene avatar. `--target` is the exact Unity Hierarchy path of the avatar GameObject; `--blueprint avtr_...` identifies an existing server avatar. Either option can select among several avatars, and using both requires them to identify the same avatar. If both are omitted, one scene avatar is selected automatically; an interactive run shows a picker when several are found, while `--plain` and `--json` stop and report a `Targets` candidate list. If the selected avatar has no Blueprint, VRCLI creates a private avatar and requires `--title`, `--thumbnail`, and `--yes`.
 
 ### Update metadata only
 
@@ -216,6 +217,8 @@ Use `--json` to write exactly one result object to stdout while diagnostics go t
   "Message": "World build and upload completed."
 }
 ```
+
+When avatar selection is ambiguous, a non-interactive failure includes `Targets` entries with each candidate's `Name`, Hierarchy `Selector`, and optional `Blueprint`; pass one `Selector` back through `--target`.
 
 Run `vrcli --help` for every available parameter.
 

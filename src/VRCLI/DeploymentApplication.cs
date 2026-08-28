@@ -62,7 +62,8 @@ public sealed class DeploymentApplication(
                 Path.AltDirectorySeparatorChar));
             string targetName = options.IsNew
                 ? "New world · " + options.Title
-                : string.IsNullOrWhiteSpace(options.BlueprintId) ? "Scene Blueprint" : options.BlueprintId;
+                : !string.IsNullOrWhiteSpace(options.TargetPath) ? options.TargetPath
+                : string.IsNullOrWhiteSpace(options.BlueprintId) ? "Auto-detect from scene" : options.BlueprintId;
             terminalUi.SetOverview(
                 projectName,
                 targetName,
@@ -149,7 +150,10 @@ public sealed class DeploymentApplication(
 
         terminalUi?.SetOverview(
             Path.GetFileName(options.ProjectPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
-            project.ContentType == ProjectContentType.Avatar ? "Avatar · Scene PipelineManager" :
+            project.ContentType == ProjectContentType.Avatar
+                ? !string.IsNullOrWhiteSpace(options.TargetPath) ? "Avatar · " + options.TargetPath
+                : !string.IsNullOrWhiteSpace(options.BlueprintId) ? "Avatar · " + options.BlueprintId
+                : "Avatar · Auto-select in Unity" :
             options.IsNew ? "New world · " + options.Title :
             string.IsNullOrWhiteSpace(options.BlueprintId) ? "Scene Blueprint" : options.BlueprintId,
             project.ScenePath ?? "First enabled build scene",
@@ -207,7 +211,14 @@ public sealed class DeploymentApplication(
             return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", exception.Message, options);
         }
 
-        string resultFile = Path.Combine(Path.GetTempPath(), $"vrcli-result-{Guid.NewGuid():N}.json");
+        string operationId = Guid.NewGuid().ToString("N");
+        string resultFile = Path.Combine(Path.GetTempPath(), $"vrcli-result-{operationId}.json");
+        string? targetRequestFile = terminalUi == null || Console.IsInputRedirected
+            ? null
+            : Path.Combine(Path.GetTempPath(), $"vrcli-target-request-{operationId}.json");
+        string? targetResponseFile = terminalUi == null || Console.IsInputRedirected
+            ? null
+            : Path.Combine(Path.GetTempPath(), $"vrcli-target-response-{operationId}.txt");
         try
         {
             await ReportAsync(
@@ -222,13 +233,24 @@ public sealed class DeploymentApplication(
                 project.ScenePath,
                 resultFile,
                 sessionTokens,
-                project.ContentType!.Value);
+                project.ContentType!.Value,
+                targetRequestFile,
+                targetResponseFile);
+            IProcessLineObserver? terminalObserver = terminalUi;
+            if (terminalUi != null && targetRequestFile != null && targetResponseFile != null)
+            {
+                terminalObserver = new TargetSelectionObserver(
+                    targetRequestFile,
+                    targetResponseFile,
+                    terminalUi,
+                    terminalUi);
+            }
             CompilerDiagnosticCollector? compilerDiagnostics = options.Operation == OperationMode.Check
-                ? new CompilerDiagnosticCollector(terminalUi)
+                ? new CompilerDiagnosticCollector(terminalObserver)
                 : null;
             IProcessLineObserver? processObserver = compilerDiagnostics != null
                 ? compilerDiagnostics
-                : terminalUi;
+                : terminalObserver;
             ChildProcessResult result = await ChildProcess.RunAsync(
                 unity,
                 LogOutput,
@@ -335,6 +357,8 @@ public sealed class DeploymentApplication(
         finally
         {
             if (File.Exists(resultFile)) File.Delete(resultFile);
+            if (targetRequestFile != null && File.Exists(targetRequestFile)) File.Delete(targetRequestFile);
+            if (targetResponseFile != null && File.Exists(targetResponseFile)) File.Delete(targetResponseFile);
         }
     }
 
@@ -379,6 +403,8 @@ public sealed class DeploymentApplication(
 
         if (contentType == ProjectContentType.World)
         {
+            if (!string.IsNullOrWhiteSpace(options.TargetPath))
+                return "--target is only valid for Avatar projects.";
             if (!string.IsNullOrWhiteSpace(options.BlueprintId) &&
                 !options.BlueprintId.StartsWith("wrld_", StringComparison.Ordinal))
             {
@@ -441,7 +467,9 @@ public sealed class DeploymentApplication(
         string? scenePath,
         string resultFile,
         VrchatSessionTokens sessionTokens,
-        ProjectContentType contentType)
+        ProjectContentType contentType,
+        string? targetRequestFile,
+        string? targetResponseFile)
     {
         ProcessStartInfo startInfo = new(unityPath) { WorkingDirectory = options.ProjectPath };
         Add(startInfo, "-batchmode");
@@ -468,6 +496,12 @@ public sealed class DeploymentApplication(
             startInfo.Environment[DeploymentEnvironment.TwoFactorToken] = sessionTokens.TwoFactorToken;
         startInfo.Environment[DeploymentEnvironment.Platform] = options.Platform.ToString();
         startInfo.Environment[DeploymentEnvironment.ResultFile] = resultFile;
+        if (!string.IsNullOrWhiteSpace(options.TargetPath))
+            startInfo.Environment[DeploymentEnvironment.Target] = options.TargetPath;
+        if (!string.IsNullOrWhiteSpace(targetRequestFile))
+            startInfo.Environment[DeploymentEnvironment.TargetRequestFile] = targetRequestFile;
+        if (!string.IsNullOrWhiteSpace(targetResponseFile))
+            startInfo.Environment[DeploymentEnvironment.TargetResponseFile] = targetResponseFile;
         startInfo.Environment[DeploymentEnvironment.OwnershipAccepted] = options.OwnershipAccepted ? "true" : "false";
         if (scenePath != null) startInfo.Environment[DeploymentEnvironment.Scene] = scenePath;
         if (options.Title != null) startInfo.Environment[DeploymentEnvironment.Title] = options.Title;
@@ -560,6 +594,7 @@ VRCLI commands and parameters
   --blueprint <content_id>      wrld_ or avtr_ override; deploy/check use the scene ID when omitted; meta requires wrld_
   --new                         Create a private world; deploy only
   --scene <Assets/...unity>     Scene to deploy or check; auto-detected when unambiguous
+  --target <hierarchy/path>     Avatar GameObject to deploy/check when a scene contains several avatars
   --platform <platform>         Deploy/check target: StandaloneWindows64 or Android; default StandaloneWindows64
   --login <username-or-email>   VRChat account; default VRCLI_USERNAME
   --password <password>         Account password; default VRCLI_PASSWORD; visible in shell history
@@ -601,4 +636,7 @@ public sealed record DeploymentResult(
     IReadOnlyList<string>? CompilerErrors = null,
     IReadOnlyList<string>? CompilerWarnings = null,
     IReadOnlyList<MetadataChange>? Changes = null,
-    string? ContentType = null);
+    string? ContentType = null,
+    IReadOnlyList<ContentTarget>? Targets = null);
+
+public sealed record ContentTarget(string Name, string Selector, string? Blueprint);

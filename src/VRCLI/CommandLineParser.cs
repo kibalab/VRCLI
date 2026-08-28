@@ -21,6 +21,7 @@ public sealed class CommandLineParser
     private static readonly HashSet<string> KnownOptions = new(BooleanOptions, StringComparer.OrdinalIgnoreCase)
     {
         "scene",
+        "target",
         "blueprint",
         "blueprint-output",
         "description",
@@ -200,6 +201,8 @@ public sealed class CommandLineParser
         }
         if (operation == OperationMode.Meta)
         {
+            if (values.ContainsKey("target"))
+                return ParseResult.Failure("--target is only valid with deploy or check.");
             if (string.IsNullOrWhiteSpace(blueprint))
                 return ParseResult.Failure("The meta command requires --blueprint <wrld_id>.");
             if (!blueprint.StartsWith("wrld_", StringComparison.Ordinal))
@@ -228,6 +231,10 @@ public sealed class CommandLineParser
         {
             return ParseResult.Failure("--blueprint-output is only valid with the deploy command.");
         }
+
+        string? targetPath = Get(values, "target");
+        if (targetPath != null && string.IsNullOrWhiteSpace(targetPath))
+            return ParseResult.Failure("--target must be a non-empty Unity Hierarchy path.");
 
         if (isNew)
         {
@@ -356,6 +363,7 @@ public sealed class CommandLineParser
             password,
             platform,
             Get(values, "scene"),
+            targetPath,
             Get(values, "unity"),
             twoFactorCode,
             twoFactorMethod,
@@ -435,6 +443,7 @@ public sealed class CommandLineParser
             if (!values.ContainsKey("blueprint") && config.NewWorld == true)
                 values["new"] = "true";
             SetMissing(values, "scene", config.Scene);
+            SetMissing(values, "target", config.Target);
             SetMissing(values, "platform", config.Platform);
             SetMissing(values, "login", config.Login);
             SetMissing(values, "title", config.Title);

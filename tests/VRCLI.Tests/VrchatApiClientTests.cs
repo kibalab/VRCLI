@@ -146,6 +146,7 @@ public sealed class VrchatApiClientTests
         null,
         null,
         null,
+        null,
         false,
         TimeSpan.FromMinutes(1),
         false,

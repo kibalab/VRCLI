@@ -76,6 +76,7 @@ namespace KibaLab.WorldDeployment.Editor
             catch (Exception exception)
             {
                 int exitCode = Classify(exception);
+                TargetSelectionException targetSelection = exception as TargetSelectionException;
                 string resultFile = request != null ? request.ResultFile : Environment.GetEnvironmentVariable(DeploymentEnvironment.ResultFile);
                 if (!string.IsNullOrWhiteSpace(resultFile))
                 {
@@ -87,8 +88,10 @@ namespace KibaLab.WorldDeployment.Editor
                         false,
                         request != null ? request.Platform : null,
                         request != null ? request.ContentType.ToString() : null,
-                        StageFor(exitCode),
-                        Describe(exception));
+                        targetSelection != null ? "target-selection" :
+                        exception is OperationCanceledException ? "cancelled" : StageFor(exitCode),
+                        Describe(exception),
+                        targets: targetSelection != null ? targetSelection.Targets : null);
                 }
                 DeploymentLog.Info("FAILED", "Phase " + DeploymentLog.CurrentPhase + " failed with exit code " + exitCode + ": " + Describe(exception));
                 Debug.LogException(exception);
@@ -119,6 +122,8 @@ namespace KibaLab.WorldDeployment.Editor
             DeploymentLog.Info("CONTEXT", "Content type: " + request.ContentType);
             if (!string.IsNullOrWhiteSpace(request.BlueprintId))
                 DeploymentLog.Info("CONTEXT", "Blueprint: " + request.BlueprintId);
+            if (!string.IsNullOrWhiteSpace(request.TargetPath))
+                DeploymentLog.Info("CONTEXT", "Avatar target: " + request.TargetPath);
         }
 
         private static IContentHandler CreateHandler(ContentType contentType)
@@ -133,13 +138,14 @@ namespace KibaLab.WorldDeployment.Editor
 
         private static int Classify(Exception exception)
         {
-            if (exception is ArgumentException || exception is FileNotFoundException) return 10;
+            if (exception is ArgumentException || exception is FileNotFoundException || exception is TargetSelectionException) return 10;
             if (exception is LoginException) return 30;
             if (exception is ContentOwnershipException || exception is OwnershipException) return 60;
             if (exception is ValidationException || exception is BuilderException || exception is BuildBlockedException) return 40;
             if (exception is UploadException || exception is BundleExistsException) return 50;
             if (exception is ApiErrorException || exception is RequestFailedException) return 70;
             if (exception is TimeoutException) return 124;
+            if (exception is OperationCanceledException) return 124;
             return 125;
         }
 
