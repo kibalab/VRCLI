@@ -10,6 +10,7 @@ public sealed class BrandingTests
         Assert.Equal(4, Branding.LogoLines.Count);
         Assert.All(Branding.LogoLines, line => Assert.Equal(43, line.Length));
         Assert.Contains("|   __ \\|", Branding.LogoText);
+        Assert.EndsWith(Environment.NewLine + "KIBA_", Branding.LogoText);
     }
 
     [Fact]

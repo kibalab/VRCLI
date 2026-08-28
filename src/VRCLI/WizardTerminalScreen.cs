@@ -228,6 +228,8 @@ internal sealed class WizardTerminalScreen : IDisposable
         if (fullLogo)
         {
             foreach (string line in logo) frame.Add(" " + Paint(line, "36;1"));
+            frame.Add(" " + Paint(Branding.Credit, "90;1"));
+            frame.Add(string.Empty);
             frame.Add(" " + routeText);
         }
         else
@@ -240,7 +242,7 @@ internal sealed class WizardTerminalScreen : IDisposable
         frame.Add(Paint("    " + Truncate(description, width - 5), "90"));
         frame.Add(string.Empty);
 
-        int summaryLimit = Math.Max(1, height - 17 - (fullLogo ? 4 : 0) - (choices?.Count ?? 0));
+        int summaryLimit = Math.Max(1, height - 17 - (fullLogo ? 6 : 0) - (choices?.Count ?? 0));
         foreach ((string label, string value) in summary.TakeLast(summaryLimit))
             frame.Add(" " + Paint("✓", "32;1") + "  " + Paint(label.PadRight(11), "90") + Truncate(value, width - 18));
 
