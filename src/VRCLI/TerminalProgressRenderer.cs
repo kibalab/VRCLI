@@ -459,7 +459,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         if (logo.Count > 1)
         {
             foreach (string line in logo) lines.Add(" " + Paint(line, "36;1"));
-            lines.Add(" " + Paint(Branding.CreditLine, "90;1"));
+            lines.Add(" " + Paint(Branding.FooterLine, "90;1"));
             lines.Add(string.Empty);
             lines.Add(Paint(" " + OperationTitle(), "90;1"));
         }
@@ -543,7 +543,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         " " + Paint(activeStage == null ? "◇" : Spinner[spinnerIndex], "36;1") +
             "  " + Truncate(lastMessage, Math.Max(10, width - 7)),
         BuildProgressFooter(width),
-        Paint(" Ctrl+C ×2 cancel", "90") + AlignRight(Paint("VRCLI " + VersionText(), "90"), width - 1, 14)
+        Paint(" Ctrl+C ×2 cancel", "90") + AlignRight(Paint("VRCLI " + Branding.Version, "90"), width - 1, 14)
     ];
 
     private List<string> BuildVerificationFooter(int width)
@@ -726,9 +726,6 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         width = Math.Max(1, width);
         return TerminalText.Truncate(value, width);
     }
-
-    private static string VersionText() =>
-        typeof(TerminalProgressRenderer).Assembly.GetName().Version?.ToString(3) ?? "dev";
 
     private static bool TryEnableVirtualTerminal()
     {

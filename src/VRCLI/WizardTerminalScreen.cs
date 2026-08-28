@@ -260,7 +260,7 @@ internal sealed class WizardTerminalScreen : IDisposable
         if (fullLogo)
         {
             foreach (string line in logo) frame.Add(" " + Paint(line, "36;1"));
-            frame.Add(" " + Paint(Branding.CreditLine, "90;1"));
+            frame.Add(" " + Paint(Branding.FooterLine, "90;1"));
             frame.Add(string.Empty);
             frame.Add(" " + routeText);
         }

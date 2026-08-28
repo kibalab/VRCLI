@@ -10,8 +10,9 @@ public sealed class BrandingTests
         Assert.Equal(4, Branding.LogoLines.Count);
         Assert.All(Branding.LogoLines, line => Assert.Equal(43, line.Length));
         Assert.Contains("|   __ \\|", Branding.LogoText);
-        Assert.Equal(43, Branding.CreditLine.Length);
-        Assert.EndsWith(Environment.NewLine + new string(' ', 35) + "by KIBA_", Branding.LogoText);
+        Assert.Equal(43, Branding.FooterLine.Length);
+        Assert.Matches(@"^v\d+\.\d+\.\d+\s+by KIBA_$", Branding.FooterLine);
+        Assert.EndsWith(Environment.NewLine + Branding.FooterLine, Branding.LogoText);
     }
 
     [Fact]
