@@ -2,6 +2,13 @@
 
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
+```text
+ ___ ___  ______  ______  _____    _______
+|   |   ||   __ \|      ||     |_ |_     _|
+|   |   ||      <|   ---||       | _|   |_
+ \_____/ |___|__||______||_______||_______|
+```
+
 VRCLI builds, checks, and uploads VRChat worlds from a terminal or CI runner.
 
 > Community project; not affiliated with VRChat Inc. Only upload content you have the right to use.
@@ -71,6 +78,17 @@ VRCLI_TOTP_SECRET=BASE32_TOTP_SETUP_SECRET
 ```
 
 `VRCLI_TOTP_SECRET` is the permanent authenticator setup secret, not a six-digit code. Store it as a protected CI secret and never commit it.
+
+Credentials can also be passed directly:
+
+```powershell
+vrcli deploy `
+  --login "account-name-or-email" `
+  --password "account-password" `
+  --interactive-two-factor
+```
+
+Use `--two-factor-code <current-code>` for a one-time code. Command-line passwords may remain in shell history or process listings, so environment variables are safer for CI.
 
 ### Deploy an existing world
 

@@ -223,14 +223,24 @@ internal sealed class WizardTerminalScreen : IDisposable
                     (index + 1).ToString("00"),
                     label)))
             : Step(step, title);
-        frame.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  ", "90") + routeText);
+        IReadOnlyList<string> logo = height >= 24 ? Branding.Fit(width - 2) : ["VRCLI"];
+        bool fullLogo = logo.Count > 1;
+        if (fullLogo)
+        {
+            foreach (string line in logo) frame.Add(" " + Paint(line, "36;1"));
+            frame.Add(" " + routeText);
+        }
+        else
+        {
+            frame.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  ", "90") + routeText);
+        }
         frame.Add(Paint(" " + new string('─', width - 2), "90"));
         frame.Add(string.Empty);
         frame.Add(" " + Paint(title, "1"));
         frame.Add(Paint("    " + Truncate(description, width - 5), "90"));
         frame.Add(string.Empty);
 
-        int summaryLimit = Math.Max(1, height - 17 - (choices?.Count ?? 0));
+        int summaryLimit = Math.Max(1, height - 17 - (fullLogo ? 4 : 0) - (choices?.Count ?? 0));
         foreach ((string label, string value) in summary.TakeLast(summaryLimit))
             frame.Add(" " + Paint("✓", "32;1") + "  " + Paint(label.PadRight(11), "90") + Truncate(value, width - 18));
 

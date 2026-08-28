@@ -436,7 +436,16 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
     {
         (int width, int height) = CurrentSize();
         List<string> lines = [];
-        lines.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  " + OperationTitle(), "90;1"));
+        IReadOnlyList<string> logo = height >= 24 ? Branding.Fit(width - 2) : ["VRCLI"];
+        if (logo.Count > 1)
+        {
+            foreach (string line in logo) lines.Add(" " + Paint(line, "36;1"));
+            lines.Add(Paint(" " + OperationTitle(), "90;1"));
+        }
+        else
+        {
+            lines.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  " + OperationTitle(), "90;1"));
+        }
         lines.Add(Paint(" " + new string('─', width - 2), "90"));
 
         if (height >= 18 && overviewProject != null)

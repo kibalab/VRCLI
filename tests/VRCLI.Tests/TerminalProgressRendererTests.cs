@@ -84,6 +84,7 @@ public sealed class TerminalProgressRendererTests
         await renderer.FinishAsync(true);
 
         string rendered = output.ToString();
+        Assert.Contains(" ___ ___  ______  ______  _____    _______ ", activeScreen);
         Assert.Contains("VRCLI", activeScreen);
         Assert.Contains("WORLD DEPLOY", activeScreen);
         Assert.Contains("Example Project", activeScreen);

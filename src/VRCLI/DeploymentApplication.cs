@@ -32,6 +32,8 @@ public sealed class DeploymentApplication(
         }
 
         DeployOptions options = parsed.Options!;
+        bool useTerminalUi = TerminalProgressRenderer.ShouldUse(options.TerminalMode, options.Verbose);
+        if (!useTerminalUi) await Branding.WriteAsync(output);
         if (options.ThumbnailPath != null && !File.Exists(options.ThumbnailPath))
         {
             await error.WriteLineAsync($"VRCLI: Thumbnail was not found: {options.ThumbnailPath}");
@@ -70,7 +72,7 @@ public sealed class DeploymentApplication(
             options.TotpSecret ?? string.Empty
         ]);
         TerminalProgressRenderer? terminalUi = null;
-        if (TerminalProgressRenderer.ShouldUse(options.TerminalMode, options.Verbose))
+        if (useTerminalUi)
         {
             terminalUi = new TerminalProgressRenderer(output, options.Operation, cancellationToken: cancellationToken);
             string projectName = Path.GetFileName(options.ProjectPath.TrimEnd(
@@ -385,7 +387,9 @@ public sealed class DeploymentApplication(
         return await JsonSerializer.DeserializeAsync<DeploymentResult>(stream);
     }
 
-    public const string HelpText = """
+    public static string HelpText => Branding.LogoText + """
+
+
 VRCLI commands and parameters
 
   deploy                        Build and upload a world; default command when omitted
