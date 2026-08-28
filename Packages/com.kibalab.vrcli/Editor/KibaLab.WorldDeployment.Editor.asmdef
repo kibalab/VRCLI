@@ -4,7 +4,6 @@
   "references": [
     "VRC.SDKBase",
     "VRC.SDKBase.Editor",
-    "VRC.SDK3.Editor",
     "Newtonsoft.Json"
   ],
   "includePlatforms": [

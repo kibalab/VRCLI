@@ -1,0 +1,21 @@
+{
+  "name": "KibaLab.WorldDeployment.Avatar.Editor",
+  "rootNamespace": "KibaLab.WorldDeployment.Editor",
+  "references": [
+    "KibaLab.WorldDeployment.Editor",
+    "VRC.SDKBase",
+    "VRC.SDKBase.Editor",
+    "VRC.SDK3A.Editor"
+  ],
+  "includePlatforms": ["Editor"],
+  "autoReferenced": true,
+  "defineConstraints": ["VRCLI_HAS_AVATARS"],
+  "versionDefines": [
+    {
+      "name": "com.vrchat.avatars",
+      "expression": "3.9.0",
+      "define": "VRCLI_HAS_AVATARS"
+    }
+  ],
+  "noEngineReferences": false
+}

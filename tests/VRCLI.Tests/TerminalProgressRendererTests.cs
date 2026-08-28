@@ -85,9 +85,9 @@ public sealed class TerminalProgressRendererTests
 
         string rendered = output.ToString();
         Assert.Contains(" ___ ___  ______  ______  _____    _______ ", activeScreen);
-        Assert.Contains(Branding.FooterLine + "\n\n WORLD DEPLOY", activeScreen);
+        Assert.Contains(Branding.FooterLine + "\n\n CONTENT DEPLOY", activeScreen);
         Assert.Contains("VRCLI", activeScreen);
-        Assert.Contains("WORLD DEPLOY", activeScreen);
+        Assert.Contains("CONTENT DEPLOY", activeScreen);
         Assert.Contains("Example Project", activeScreen);
         Assert.Contains("Assets/Scenes/Main.unity", activeScreen);
         Assert.Contains("Project context", rendered);

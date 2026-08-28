@@ -39,11 +39,12 @@ namespace KibaLab.WorldDeployment.Editor
                 await Authentication.LoginAsync(request);
                 DeploymentLog.Phase("CONTEXT", "Authentication complete. Resolving operation context.");
 
-                string scenePath = WorldDeployer.ResolveScenePath(request.ScenePath);
+                string scenePath = ContentScene.Resolve(request.ScenePath);
                 LogDeploymentContext(request, scenePath);
+                IContentHandler handler = CreateHandler(request.ContentType);
                 if (request.Operation == RequestOperation.Check)
                 {
-                    CheckReport report = await WorldChecker.RunAsync(request, scenePath);
+                    CheckReport report = await handler.CheckAsync(request, scenePath);
                     int checkExitCode = report.Success ? 0 : 40;
                     DeploymentResult.Write(
                         request.ResultFile,
@@ -52,6 +53,7 @@ namespace KibaLab.WorldDeployment.Editor
                         report.Blueprint,
                         false,
                         request.Platform,
+                        request.ContentType.ToString(),
                         "check",
                         report.Success
                             ? "Preflight check completed without blocking errors; no bundle was built or uploaded."
@@ -66,9 +68,9 @@ namespace KibaLab.WorldDeployment.Editor
                     return;
                 }
 
-                string deployedBlueprint = await WorldDeployer.DeployAsync(request, scenePath);
-                DeploymentResult.Write(request.ResultFile, true, 0, deployedBlueprint, request.IsNew, request.Platform, "complete", request.IsNew ? "World created, built, and uploaded." : "World build and upload completed.");
-                DeploymentLog.Phase("COMPLETE", "Deployment completed successfully for " + deployedBlueprint + ".");
+                DeploymentOutcome outcome = await handler.DeployAsync(request, scenePath);
+                DeploymentResult.Write(request.ResultFile, true, 0, outcome.Blueprint, outcome.Created, request.Platform, request.ContentType.ToString(), "complete", outcome.Message);
+                DeploymentLog.Phase("COMPLETE", "Deployment completed successfully for " + outcome.Blueprint + ".");
                 EditorApplication.Exit(0);
             }
             catch (Exception exception)
@@ -84,6 +86,7 @@ namespace KibaLab.WorldDeployment.Editor
                         request != null ? request.BlueprintId : null,
                         false,
                         request != null ? request.Platform : null,
+                        request != null ? request.ContentType.ToString() : null,
                         StageFor(exitCode),
                         Describe(exception));
                 }
@@ -113,8 +116,19 @@ namespace KibaLab.WorldDeployment.Editor
             DeploymentLog.Info("CONTEXT", "VRChat SDK platform: " + VRC.Tools.Platform);
             DeploymentLog.Info("CONTEXT", "VRCLI bridge version: " + DeploymentLog.Version);
             DeploymentLog.Info("CONTEXT", "Mode: " + request.Operation);
+            DeploymentLog.Info("CONTEXT", "Content type: " + request.ContentType);
             if (!string.IsNullOrWhiteSpace(request.BlueprintId))
                 DeploymentLog.Info("CONTEXT", "Blueprint: " + request.BlueprintId);
+        }
+
+        private static IContentHandler CreateHandler(ContentType contentType)
+        {
+            Type handlerType = TypeCache.GetTypesDerivedFrom<IContentHandler>()
+                .FirstOrDefault(type => !type.IsAbstract && !type.IsInterface &&
+                    ((IContentHandler)Activator.CreateInstance(type)).ContentType == contentType);
+            if (handlerType == null)
+                throw new InvalidOperationException("The " + contentType + " SDK bridge is unavailable. Ensure the matching VRChat SDK package is installed.");
+            return (IContentHandler)Activator.CreateInstance(handlerType);
         }
 
         private static int Classify(Exception exception)

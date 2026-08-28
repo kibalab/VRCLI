@@ -9,6 +9,7 @@ namespace KibaLab.WorldDeployment.Editor
         private static readonly char[] TagSeparators = { '|' };
 
         public RequestOperation Operation { get; private set; }
+        public ContentType ContentType { get; private set; }
         public string BlueprintId { get; private set; }
         public bool IsNew { get; private set; }
         public string Title { get; private set; }
@@ -43,6 +44,7 @@ namespace KibaLab.WorldDeployment.Editor
             DeploymentRequest request = new DeploymentRequest
             {
                 Operation = ReadOperation(),
+                ContentType = ReadContentType(),
                 BlueprintId = Environment.GetEnvironmentVariable(DeploymentEnvironment.BlueprintId) ?? string.Empty,
                 IsNew = ReadBoolean(DeploymentEnvironment.IsNew),
                 Username = Require(DeploymentEnvironment.Username),
@@ -61,6 +63,8 @@ namespace KibaLab.WorldDeployment.Editor
                     StringComparison.OrdinalIgnoreCase)
             };
 
+            if (request.ContentType == ContentType.Avatar && request.IsNew)
+                throw new ArgumentException("VRCLI_CREATE_WORLD is not valid for Avatar projects.");
             if (request.IsNew && string.IsNullOrWhiteSpace(request.BlueprintId))
                 throw new ArgumentException("A generated Blueprint ID is missing for the new world.");
             if (request.Operation != RequestOperation.Deploy && request.IsNew)
@@ -129,6 +133,15 @@ namespace KibaLab.WorldDeployment.Editor
             return operation;
         }
 
+        private static ContentType ReadContentType()
+        {
+            string value = Require(DeploymentEnvironment.ContentType);
+            ContentType contentType;
+            if (!Enum.TryParse(value, true, out contentType))
+                throw new ArgumentException("VRCLI_CONTENT_TYPE must be World or Avatar.");
+            return contentType;
+        }
+
         private static bool ReadBoolean(string name)
         {
             return string.Equals(Environment.GetEnvironmentVariable(name), "true", StringComparison.OrdinalIgnoreCase);
@@ -174,5 +187,12 @@ namespace KibaLab.WorldDeployment.Editor
     {
         Deploy,
         Check
+    }
+
+
+    internal enum ContentType
+    {
+        World,
+        Avatar
     }
 }

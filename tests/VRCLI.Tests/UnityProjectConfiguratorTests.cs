@@ -14,12 +14,14 @@ public sealed class UnityProjectConfiguratorTests : IDisposable
     {
         CreateProject("  scriptingDefineSymbols: {}\r\n  additionalCompilerArguments: {}\r\n", true);
 
-        UnityProjectConfigurationResult first = UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(
+        UnityProjectConfigurationResult first = UnityProjectConfigurator.EnsureVrchatSdkConfiguration(
             projectPath,
-            BuildPlatform.StandaloneWindows64);
-        UnityProjectConfigurationResult second = UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(
+            BuildPlatform.StandaloneWindows64,
+            ProjectContentType.World);
+        UnityProjectConfigurationResult second = UnityProjectConfigurator.EnsureVrchatSdkConfiguration(
             projectPath,
-            BuildPlatform.StandaloneWindows64);
+            BuildPlatform.StandaloneWindows64,
+            ProjectContentType.World);
 
         string settings = File.ReadAllText(SettingsPath);
         Assert.True(first.Changed);
@@ -38,9 +40,10 @@ public sealed class UnityProjectConfiguratorTests : IDisposable
             "    Standalone: CUSTOM\n" +
             "  additionalCompilerArguments: {}\n");
 
-        UnityProjectConfigurationResult result = UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(
+        UnityProjectConfigurationResult result = UnityProjectConfigurator.EnsureVrchatSdkConfiguration(
             projectPath,
-            BuildPlatform.Android);
+            BuildPlatform.Android,
+            ProjectContentType.World);
 
         string settings = File.ReadAllText(SettingsPath);
         Assert.True(result.Changed);
@@ -56,9 +59,26 @@ public sealed class UnityProjectConfiguratorTests : IDisposable
         File.WriteAllText(SettingsPath, "  scriptingDefineSymbols: {}\n");
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-            UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(projectPath, BuildPlatform.Android));
+            UnityProjectConfigurator.EnsureVrchatSdkConfiguration(
+                projectPath,
+                BuildPlatform.Android,
+                ProjectContentType.World));
 
-        Assert.Contains("VRChat Worlds SDK", exception.Message);
+        Assert.Contains("VRChat World SDK", exception.Message);
+    }
+
+    [Fact]
+    public void ConfiguresAvatarProjectWithoutUdonDefine()
+    {
+        CreateAvatarProject("  scriptingDefineSymbols: {}\n  additionalCompilerArguments: {}\n");
+
+        UnityProjectConfigurationResult result = UnityProjectConfigurator.EnsureVrchatSdkConfiguration(
+            projectPath,
+            BuildPlatform.Android,
+            ProjectContentType.Avatar);
+
+        Assert.Equal(["VRC_SDK_VRCSDK3"], result.AddedDefines);
+        Assert.DoesNotContain("UDON", File.ReadAllText(SettingsPath));
     }
 
     private string SettingsPath => Path.Combine(projectPath, "ProjectSettings", "ProjectSettings.asset");
@@ -76,6 +96,15 @@ public sealed class UnityProjectConfiguratorTests : IDisposable
             Path.Combine(projectPath, "Packages", "com.vrchat.worlds", "Editor", "VRCSDK", "VRC.SDK3.Editor.asmdef"),
             "{}");
         File.WriteAllText(SettingsPath, settings, new UTF8Encoding(bom));
+    }
+
+    private void CreateAvatarProject(string settings)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+        string sdkPath = Path.Combine(projectPath, "Packages", "com.vrchat.avatars", "Editor", "VRCSDK", "SDK3A");
+        Directory.CreateDirectory(sdkPath);
+        File.WriteAllText(Path.Combine(sdkPath, "VRC.SDK3A.Editor.asmdef"), "{}");
+        File.WriteAllText(SettingsPath, settings);
     }
 
     public void Dispose()

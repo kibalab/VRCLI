@@ -10,9 +10,9 @@
                                    by KIBA_
 ```
 
-VRCLI는 터미널이나 CI 러너에서 VRChat 월드를 빌드하고, 검사하고, 업로드합니다.
+VRCLI는 터미널이나 CI 러너에서 VRChat 월드와 아바타를 빌드하고, 검사하고, 업로드합니다. `deploy`와 `check`는 프로젝트의 VPM 의존성으로 콘텐츠 유형을 자동 판별합니다.
 
-> 의존성 안내: VRCLI는 독립적인 월드 빌드 또는 업로드 구현체가 아닌 자동화 계층입니다. 대상 프로젝트에 설치된 호환 Unity Editor와 VRChat Worlds SDK에 전적으로 의존하며, 두 제품을 대체하거나 재배포하지 않습니다.
+> 의존성 안내: VRCLI는 독립적인 콘텐츠 빌드 또는 업로드 구현체가 아닌 자동화 계층입니다. 대상 프로젝트에 설치된 호환 Unity Editor와 해당 VRChat Worlds 또는 Avatars SDK에 전적으로 의존하며, 이 제품들을 대체하거나 재배포하지 않습니다.
 >
 > VRChat Inc.와 관련 없는 커뮤니티 프로젝트입니다. 본인이 사용할 권한이 있는 콘텐츠만 업로드하세요.
 
@@ -20,11 +20,11 @@ VRCLI는 터미널이나 CI 러너에서 VRChat 월드를 빌드하고, 검사�
 
 다음 환경이 필요합니다.
 
-- VRChat Worlds SDK 3.9.0 이상을 사용하는 VCC/VPM 월드 프로젝트
+- VRChat Worlds SDK 또는 Avatars SDK 3.9.0 이상을 사용하는 VCC/VPM 프로젝트
 - `ProjectSettings/ProjectVersion.txt`에 기록된 버전의 Unity
 - `vpm` 명령으로 실행할 수 있는 [VPM CLI](https://vcc.docs.vrchat.com/vpm/cli/)
 - VRCLI 빌드에 필요한 .NET 8 SDK
-- 월드를 업로드할 수 있는 VRChat 계정
+- 월드 또는 아바타를 업로드할 수 있는 VRChat 계정
 
 Windows는 테스트를 완료했습니다. macOS 지원은 실험 단계입니다. Apple Silicon과 Intel Mac용 CLI 빌드는 가능하지만 Mac에서 실제 배포 전체 과정은 아직 검증하지 않았습니다. 자동 Unity 탐색은 현재 Windows만 지원하므로 `UNITY_EDITOR_PATH` 또는 `--unity`를 사용해야 합니다.
 
@@ -59,8 +59,8 @@ Windows에서는 `VRCLI.exe`, macOS에서는 `./VRCLI`를 실행합니다.
 `Directory.Build.props`의 `VersionPrefix`를 변경하고 커밋한 뒤, 일치하는 `vX.Y.Z` 태그를 푸시합니다.
 
 ```bash
-git tag -a v0.16.0 -m "VRCLI v0.16.0"
-git push origin v0.16.0
+git tag -a v0.17.0 -m "VRCLI v0.17.0"
+git push origin v0.17.0
 ```
 
 GitHub Actions가 태그 시점의 커밋을 테스트하고, 자체 포함된 Windows 및 macOS 압축 파일과 SHA-256 체크섬을 GitHub Release에 게시합니다. 태그와 `VersionPrefix`가 다르면 릴리스를 만들지 않고 실패합니다.
@@ -75,9 +75,9 @@ vrcli meta
 vrcli check
 ```
 
-- `deploy`: 월드를 빌드하고 업로드합니다.
+- `deploy`: 프로젝트 유형을 판별한 뒤 월드 또는 아바타를 빌드하고 업로드합니다.
 - `meta`: Unity를 열지 않고 기존 메타데이터를 수정하며 로그인 세션을 유지합니다.
-- `check`: 빌드나 업로드 없이 컴파일 및 SDK 업로드 문제를 보고합니다.
+- `check`: 프로젝트 유형을 판별하고 빌드나 업로드 없이 컴파일 및 SDK 업로드 문제를 보고합니다.
 
 TUI에서 프로젝트, 씬, 계정과 필요한 인증 코드를 입력할 수 있습니다. Windows에서는 인증된 세션을 Windows 자격 증명 관리자에 저장하며, 다음 실행부터 저장된 계정을 선택하거나 새 계정으로 로그인할 수 있습니다.
 
@@ -136,6 +136,18 @@ vrcli deploy `
 
 새 월드는 비공개로 생성됩니다. `--blueprint-output`은 생성된 Blueprint를 이후 빌드에 사용할 수 있도록 저장합니다.
 
+### 아바타 배포
+
+```powershell
+vrcli deploy `
+  --project "C:\Unity\MyAvatar" `
+  --scene "Assets/Avatar.unity" `
+  --platform StandaloneWindows64 `
+  --yes --plain
+```
+
+VRCLI가 Avatars SDK를 판별하고 씬의 아바타를 선택합니다. 기존 아바타는 `PipelineManager`의 Blueprint를 사용하며 `--blueprint avtr_...`로 선택하거나 덮어쓸 수 있습니다. Blueprint가 없으면 비공개 신규 아바타로 생성하며 `--title`, `--thumbnail`, `--yes`가 필요합니다. `--description`, `--tag`, `--blueprint-output`도 아바타에서 사용할 수 있습니다. 여러 아바타가 있는 씬은 기존 아바타의 `avtr_` Blueprint를 지정하거나 업로드 대상을 하나만 남겨야 합니다.
+
 ### 메타데이터만 갱신
 
 ```powershell
@@ -163,7 +175,7 @@ Unity 컴파일, 프로젝트 설정, SDK 검증, 소유권과 업로드 동의�
 
 ## Windows와 Android 병렬 배포
 
-Jenkins 컨트롤러나 GitHub Actions 서비스는 Linux에서 실행해도 되지만, `deploy`와 `check` 작업은 Windows 러너에서 실행해야 합니다. VRChat SDK는 Linux를 공식 지원하지 않으므로 Linux 월드 업로드는 보장할 수 없습니다. Unity를 실행하지 않는 `meta`는 Linux에서도 사용할 수 있습니다. Unity는 하나의 프로젝트 디렉터리를 두 프로세스에서 안전하게 열 수 없으므로 별도의 작업공간을 사용하세요.
+Jenkins 컨트롤러나 GitHub Actions 서비스는 Linux에서 실행해도 되지만, `deploy`와 `check` 작업은 Windows 러너에서 실행해야 합니다. VRChat SDK는 Linux를 공식 지원하지 않으므로 Linux 월드 또는 아바타 업로드는 보장할 수 없습니다. Unity를 실행하지 않는 `meta`는 Linux에서도 사용할 수 있습니다. Unity는 하나의 프로젝트 디렉터리를 두 프로세스에서 안전하게 열 수 없으므로 별도의 작업공간을 사용하세요.
 
 ```yaml
 jobs:
@@ -198,6 +210,7 @@ jobs:
   "Success": true,
   "ExitCode": 0,
   "Blueprint": "wrld_...",
+  "ContentType": "World",
   "Platform": "StandaloneWindows64",
   "Stage": "complete",
   "Message": "World build and upload completed."

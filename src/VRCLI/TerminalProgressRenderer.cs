@@ -16,7 +16,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         ["AUTH"] = "Authentication",
         ["CONTEXT"] = "Project context",
         ["PREPARE"] = "Project preparation",
-        ["WORLD"] = "World metadata",
+        ["WORLD"] = "Content metadata",
         ["SDK"] = "SDK initialization",
         ["OWNERSHIP"] = "Ownership consent",
         ["BUILD"] = "Validation and build",
@@ -380,6 +380,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
 
     private void ApplyProgressUnsafe(ProgressLine progress)
     {
+        if (progress.Area == "AVATAR") progress = progress with { Area = "WORLD" };
         if (!progress.StartsPhase && activeStage == progress.Area && !IsNoisyDetail(progress.Message))
             AddDetailUnsafe(lastMessage);
 
@@ -612,14 +613,14 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
     {
         OperationMode.Meta => "WORLD META",
         OperationMode.Check => "PREFLIGHT CHECK",
-        _ => "WORLD DEPLOY"
+        _ => "CONTENT DEPLOY"
     };
 
     private string OperationDescription() => operation switch
     {
         OperationMode.Meta => "Update VRChat world metadata without a bundle build",
         OperationMode.Check => "Compile and inspect VRChat upload readiness without uploading",
-        _ => "Build, sign, and publish a VRChat world"
+        _ => "Build and publish VRChat world or avatar content"
     };
 
     private string CompletionLabel(bool success) => (operation, success) switch

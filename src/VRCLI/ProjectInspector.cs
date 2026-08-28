@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace KibaLab.WorldDeployment;
@@ -23,6 +24,11 @@ public static partial class ProjectInspector
         if (!File.Exists(vpmManifest))
         {
             return ProjectInspectionResult.Failure("Packages/vpm-manifest.json is missing. The project is not a VPM project.");
+        }
+
+        if (!TryDetectContentType(vpmManifest, out ProjectContentType contentType, out string? contentError))
+        {
+            return ProjectInspectionResult.Failure(contentError!);
         }
 
         string versionText = File.ReadAllText(versionFile);
@@ -62,7 +68,7 @@ public static partial class ProjectInspector
             }
         }
 
-        return ProjectInspectionResult.Success(match.Groups[1].Value, normalizedScene);
+        return ProjectInspectionResult.Success(match.Groups[1].Value, normalizedScene, contentType);
     }
 
     public static string NormalizeScenePath(string projectPath, string scenePath)
@@ -124,6 +130,18 @@ public static partial class ProjectInspector
         return null;
     }
 
+    public static IReadOnlyList<string> FindSceneBlueprints(string projectPath, string scenePath, ProjectContentType contentType)
+    {
+        string normalized = NormalizeScenePath(projectPath, scenePath);
+        string fullPath = Path.Combine(projectPath, normalized.Replace('/', Path.DirectorySeparatorChar));
+        if (!File.Exists(fullPath)) return [];
+        string prefix = contentType == ProjectContentType.World ? "wrld_" : "avtr_";
+        return Regex.Matches(File.ReadAllText(fullPath), @"(?m)\bblueprintId:\s*(" + prefix + @"[A-Za-z0-9_-]+)\s*$")
+            .Select(match => match.Groups[1].Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
     private static string ResolveDefaultScene(string projectPath)
     {
         string? enabledScene = FindFirstEnabledScene(projectPath);
@@ -144,7 +162,7 @@ public static partial class ProjectInspector
         if (scenes.Count == 0)
         {
             throw new InvalidOperationException(
-                "No scene was specified, Editor Build Settings has no enabled scene, and no .unity scene exists under Assets. Use --scene after creating a world scene.");
+                "No scene was specified, Editor Build Settings has no enabled scene, and no .unity scene exists under Assets. Create a content scene or use --scene.");
         }
 
         string examples = string.Join(", ", scenes.Take(3));
@@ -154,10 +172,59 @@ public static partial class ProjectInspector
 
     [GeneratedRegex(@"(?m)^m_EditorVersion:\s*([^\r\n]+)\s*$")]
     private static partial Regex UnityVersionRegex();
+
+    private static bool TryDetectContentType(
+        string manifestPath,
+        out ProjectContentType contentType,
+        out string? error)
+    {
+        contentType = default;
+        error = null;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            if (!document.RootElement.TryGetProperty("dependencies", out JsonElement dependencies) ||
+                dependencies.ValueKind != JsonValueKind.Object)
+            {
+                error = "Packages/vpm-manifest.json has no dependencies object.";
+                return false;
+            }
+
+            bool worlds = dependencies.TryGetProperty("com.vrchat.worlds", out _);
+            bool avatars = dependencies.TryGetProperty("com.vrchat.avatars", out _);
+            if (worlds == avatars)
+            {
+                error = worlds
+                    ? "Both VRChat Worlds and Avatars SDKs are direct project dependencies. Remove the unused SDK so the content type is unambiguous."
+                    : "The project has neither com.vrchat.worlds nor com.vrchat.avatars as a direct VPM dependency.";
+                return false;
+            }
+
+            contentType = worlds ? ProjectContentType.World : ProjectContentType.Avatar;
+            return true;
+        }
+        catch (JsonException exception)
+        {
+            error = "Packages/vpm-manifest.json is invalid: " + exception.Message;
+            return false;
+        }
+    }
 }
 
-public sealed record ProjectInspectionResult(bool IsValid, string? UnityVersion, string? ScenePath, string? Error)
+public enum ProjectContentType
 {
-    public static ProjectInspectionResult Success(string unityVersion, string? scenePath) => new(true, unityVersion, scenePath, null);
-    public static ProjectInspectionResult Failure(string error) => new(false, null, null, error);
+    World,
+    Avatar
+}
+
+public sealed record ProjectInspectionResult(
+    bool IsValid,
+    string? UnityVersion,
+    string? ScenePath,
+    ProjectContentType? ContentType,
+    string? Error)
+{
+    public static ProjectInspectionResult Success(string unityVersion, string? scenePath, ProjectContentType contentType) =>
+        new(true, unityVersion, scenePath, contentType, null);
+    public static ProjectInspectionResult Failure(string error) => new(false, null, null, null, error);
 }

@@ -1,12 +1,13 @@
 {
   "name": "com.kibalab.vrcli",
   "displayName": "VRCLI Unity Bridge",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "unity": "2022.3",
-  "description": "Unity Editor bridge used by VRCLI to build and upload VRChat worlds.",
+  "description": "Unity Editor bridge used by VRCLI to build and upload VRChat worlds and avatars.",
   "keywords": [
     "vrchat",
     "world",
+    "avatar",
     "ci",
     "deployment"
   ],
@@ -24,6 +25,6 @@
     "url": "https://vpm.kiba.red/"
   },
   "vpmDependencies": {
-    "com.vrchat.worlds": "3.9.0"
+    "com.vrchat.base": "3.9.0"
   }
 }

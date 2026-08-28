@@ -12,6 +12,7 @@ namespace KibaLab.WorldDeployment.Editor
         public string Blueprint;
         public bool Created;
         public string Platform;
+        public string ContentType;
         public string Stage;
         public string Message;
         public string[] Errors;
@@ -25,6 +26,7 @@ namespace KibaLab.WorldDeployment.Editor
             string blueprint,
             bool created,
             string platform,
+            string contentType,
             string stage,
             string message,
             string[] errors = null,
@@ -38,6 +40,7 @@ namespace KibaLab.WorldDeployment.Editor
                 Blueprint = blueprint,
                 Created = created,
                 Platform = platform,
+                ContentType = contentType,
                 Stage = stage,
                 Message = message,
                 Errors = errors,

@@ -4,6 +4,7 @@ namespace KibaLab.WorldDeployment
     {
         public const string Project = "VRCLI_PROJECT";
         public const string Operation = "VRCLI_OPERATION";
+        public const string ContentType = "VRCLI_CONTENT_TYPE";
         public const string BlueprintId = "VRCLI_BLUEPRINT_ID";
         public const string IsNew = "VRCLI_CREATE_WORLD";
         public const string Username = "VRCLI_USERNAME";

@@ -6,11 +6,12 @@ public static class UnityProjectConfigurator
 {
     private static readonly string[] RequiredWorldDefines = ["UDON", "VRC_SDK_VRCSDK3"];
 
-    public static UnityProjectConfigurationResult EnsureVrchatWorldSdkDefines(
+    public static UnityProjectConfigurationResult EnsureVrchatSdkConfiguration(
         string projectPath,
-        BuildPlatform platform)
+        BuildPlatform platform,
+        ProjectContentType contentType)
     {
-        EnsureWorldSdkEditorAssemblyExists(projectPath);
+        EnsureSdkEditorAssemblyExists(projectPath, contentType);
 
         string settingsPath = Path.Combine(projectPath, "ProjectSettings", "ProjectSettings.asset");
         if (!File.Exists(settingsPath))
@@ -52,7 +53,10 @@ public static class UnityProjectConfigurator
         List<string> existing = targetLine >= 0
             ? ParseDefines(lines[targetLine][targetPrefix.Length..])
             : [];
-        string[] added = RequiredWorldDefines
+        string[] requiredDefines = contentType == ProjectContentType.World
+            ? RequiredWorldDefines
+            : ["VRC_SDK_VRCSDK3"];
+        string[] added = requiredDefines
             .Where(required => !existing.Contains(required, StringComparer.OrdinalIgnoreCase))
             .ToArray();
         if (added.Length == 0)
@@ -91,27 +95,35 @@ public static class UnityProjectConfigurator
         return new UnityProjectConfigurationResult(true, target, added);
     }
 
-    private static void EnsureWorldSdkEditorAssemblyExists(string projectPath)
+    private static void EnsureSdkEditorAssemblyExists(string projectPath, ProjectContentType contentType)
     {
+        string packageName = contentType == ProjectContentType.World ? "com.vrchat.worlds" : "com.vrchat.avatars";
+        string assemblyName = contentType == ProjectContentType.World ? "VRC.SDK3.Editor.asmdef" : "VRC.SDK3A.Editor.asmdef";
         string embedded = Path.Combine(
             projectPath,
             "Packages",
-            "com.vrchat.worlds",
+            packageName,
             "Editor",
             "VRCSDK",
-            "VRC.SDK3.Editor.asmdef");
+            contentType == ProjectContentType.Avatar ? "SDK3A" : string.Empty,
+            assemblyName);
         if (File.Exists(embedded)) return;
 
         string packageCache = Path.Combine(projectPath, "Library", "PackageCache");
-        if (Directory.Exists(packageCache) && Directory.EnumerateDirectories(packageCache, "com.vrchat.worlds@*")
-                .Any(directory => File.Exists(Path.Combine(directory, "Editor", "VRCSDK", "VRC.SDK3.Editor.asmdef"))))
+        if (Directory.Exists(packageCache) && Directory.EnumerateDirectories(packageCache, packageName + "@*")
+                .Any(directory => File.Exists(Path.Combine(
+                    directory,
+                    "Editor",
+                    "VRCSDK",
+                    contentType == ProjectContentType.Avatar ? "SDK3A" : string.Empty,
+                    assemblyName))))
         {
             return;
         }
 
         throw new InvalidOperationException(
-            "VRChat Worlds SDK editor package is unavailable after VPM restore. " +
-            "Install com.vrchat.worlds 3.9.0 or newer in the project and retry.");
+            "VRChat " + contentType + " SDK editor package is unavailable after VPM restore. " +
+            "Install " + packageName + " 3.9.0 or newer in the project and retry.");
     }
 
     private static int FindNextSection(IReadOnlyList<string> lines, int start)

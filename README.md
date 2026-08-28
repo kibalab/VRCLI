@@ -10,9 +10,9 @@
                                    by KIBA_
 ```
 
-VRCLI builds, checks, and uploads VRChat worlds from a terminal or CI runner.
+VRCLI builds, checks, and uploads VRChat worlds and avatars from a terminal or CI runner. `deploy` and `check` automatically detect the content type from the project's VPM dependencies.
 
-> Dependency notice: VRCLI is an automation layer, not a standalone world build or upload implementation. It depends entirely on a compatible Unity Editor and the VRChat Worlds SDK installed in the target project; it does not replace or redistribute either product.
+> Dependency notice: VRCLI is an automation layer, not a standalone content build or upload implementation. It depends entirely on a compatible Unity Editor and the matching VRChat Worlds or Avatars SDK installed in the target project; it does not replace or redistribute either product.
 >
 > Community project; not affiliated with VRChat Inc. Only upload content you have the right to use.
 
@@ -20,11 +20,11 @@ VRCLI builds, checks, and uploads VRChat worlds from a terminal or CI runner.
 
 You need:
 
-- A VCC/VPM world project with VRChat Worlds SDK 3.9.0 or newer
+- A VCC/VPM project with either VRChat Worlds SDK or Avatars SDK 3.9.0 or newer
 - The Unity version recorded in `ProjectSettings/ProjectVersion.txt`
 - [VPM CLI](https://vcc.docs.vrchat.com/vpm/cli/) available as `vpm`
 - .NET 8 SDK to build VRCLI
-- A VRChat account that can upload worlds
+- A VRChat account that can upload worlds or avatars
 
 Windows is tested. macOS support is experimental: the CLI builds for Apple silicon and Intel Macs, but has not yet completed an end-to-end deployment test on a Mac. Set `UNITY_EDITOR_PATH` or use `--unity` because automatic Unity discovery currently covers Windows only.
 
@@ -59,8 +59,8 @@ Run `VRCLI.exe` on Windows or `./VRCLI` on macOS.
 Set `VersionPrefix` in `Directory.Build.props`, commit it, then push the matching `vX.Y.Z` tag:
 
 ```bash
-git tag -a v0.16.0 -m "VRCLI v0.16.0"
-git push origin v0.16.0
+git tag -a v0.17.0 -m "VRCLI v0.17.0"
+git push origin v0.17.0
 ```
 
 GitHub Actions tests the tagged commit and publishes self-contained Windows and macOS archives with SHA-256 checksums to a GitHub Release. A tag that does not match `VersionPrefix` fails without creating a release.
@@ -75,9 +75,9 @@ vrcli meta
 vrcli check
 ```
 
-- `deploy` builds and uploads a world.
+- `deploy` detects the project type, then builds and uploads a world or avatar.
 - `meta` edits existing metadata without opening Unity and keeps the login session open.
-- `check` reports compilation and SDK upload blockers without building or uploading.
+- `check` detects the project type and reports compilation and SDK upload blockers without building or uploading.
 
 The TUI asks for the project, scene, account, and any missing verification code. On Windows, verified sessions are stored in Windows Credential Manager; later runs let you choose a saved account or sign in with another one.
 
@@ -136,6 +136,18 @@ vrcli deploy `
 
 The world is created as private. `--blueprint-output` saves its generated Blueprint for later builds.
 
+### Deploy an avatar
+
+```powershell
+vrcli deploy `
+  --project "C:\Unity\MyAvatar" `
+  --scene "Assets/Avatar.unity" `
+  --platform StandaloneWindows64 `
+  --yes --plain
+```
+
+VRCLI detects the Avatars SDK and selects the scene avatar. An existing avatar uses its `PipelineManager` Blueprint; `--blueprint avtr_...` can select or override it. If the selected avatar has no Blueprint, VRCLI creates a private avatar and requires `--title`, `--thumbnail`, and `--yes`. `--description`, `--tag`, and `--blueprint-output` also work for avatars. A scene with multiple avatars requires an `avtr_` Blueprint override unless only one upload target remains.
+
 ### Update metadata only
 
 ```powershell
@@ -163,7 +175,7 @@ This checks Unity compilation, project configuration, SDK validation, ownership,
 
 ## Deploy Windows and Android in parallel
 
-The Jenkins controller or GitHub Actions service may run on Linux, but `deploy` and `check` jobs should use Windows runners. The VRChat SDK does not officially support Linux, so Linux world uploads cannot be guaranteed; `meta` does not start Unity and can run there. Use separate project workspaces because Unity cannot safely open one project directory in two processes.
+The Jenkins controller or GitHub Actions service may run on Linux, but `deploy` and `check` jobs should use Windows runners. The VRChat SDK does not officially support Linux, so Linux world or avatar uploads cannot be guaranteed; `meta` does not start Unity and can run there. Use separate project workspaces because Unity cannot safely open one project directory in two processes.
 
 ```yaml
 jobs:
@@ -198,6 +210,7 @@ Use `--json` to write exactly one result object to stdout while diagnostics go t
   "Success": true,
   "ExitCode": 0,
   "Blueprint": "wrld_...",
+  "ContentType": "World",
   "Platform": "StandaloneWindows64",
   "Stage": "complete",
   "Message": "World build and upload completed."

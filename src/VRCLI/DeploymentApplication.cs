@@ -130,6 +130,14 @@ public sealed class DeploymentApplication(
             return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", project.Error!, options);
         }
 
+        string? contentOptionError = ValidateContentOptions(options, project.ContentType!.Value);
+        if (contentOptionError != null)
+        {
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            await error.WriteLineAsync("VRCLI: " + contentOptionError);
+            return await WriteFailureAsync(ExitCodes.InvalidArguments, "arguments", contentOptionError, options, project.ContentType);
+        }
+
         string? unityPath = UnityLocator.Find(project.UnityVersion!, options.UnityPath);
         if (unityPath == null)
         {
@@ -141,11 +149,12 @@ public sealed class DeploymentApplication(
 
         terminalUi?.SetOverview(
             Path.GetFileName(options.ProjectPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+            project.ContentType == ProjectContentType.Avatar ? "Avatar · Scene PipelineManager" :
             options.IsNew ? "New world · " + options.Title :
             string.IsNullOrWhiteSpace(options.BlueprintId) ? "Scene Blueprint" : options.BlueprintId,
             project.ScenePath ?? "First enabled build scene",
             options.Platform.ToString());
-        await ReportAsync(terminalUi, "BOOT", options.Operation + " request validated; preparing dependencies and Unity bridge.", true);
+        await ReportAsync(terminalUi, "BOOT", project.ContentType + " " + options.Operation.ToString().ToLowerInvariant() + " request validated; preparing dependencies and Unity bridge.", true);
 
         if (!options.SkipVpmResolve)
         {
@@ -181,7 +190,10 @@ public sealed class DeploymentApplication(
             await ReportAsync(terminalUi, "BRIDGE", "Unity bridge ready: " + bridge);
 
             UnityProjectConfigurationResult configuration =
-                UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(options.ProjectPath, options.Platform);
+                UnityProjectConfigurator.EnsureVrchatSdkConfiguration(
+                    options.ProjectPath,
+                    options.Platform,
+                    project.ContentType!.Value);
             string configurationMessage = configuration.Changed
                 ? $"Initialized VRChat SDK defines for {configuration.TargetGroup}: " +
                   string.Join(", ", configuration.AddedDefines)
@@ -209,7 +221,8 @@ public sealed class DeploymentApplication(
                 options,
                 project.ScenePath,
                 resultFile,
-                sessionTokens);
+                sessionTokens,
+                project.ContentType!.Value);
             CompilerDiagnosticCollector? compilerDiagnostics = options.Operation == OperationMode.Check
                 ? new CompilerDiagnosticCollector(terminalUi)
                 : null;
@@ -251,7 +264,8 @@ public sealed class DeploymentApplication(
                         null,
                         null,
                         compilerErrors,
-                        compilerWarnings);
+                        compilerWarnings,
+                        ContentType: project.ContentType.ToString());
                 }
                 else if (bridgeResult != null)
                 {
@@ -275,7 +289,7 @@ public sealed class DeploymentApplication(
                     catch (Exception exception)
                     {
                         string message =
-                            "World upload succeeded, but the Blueprint output could not be written: " + exception.Message;
+                            "Content upload succeeded, but the Blueprint output could not be written: " + exception.Message;
                         await error.WriteLineAsync("VRCLI: " + message);
                         DeploymentResult partialFailure = bridgeResult with
                         {
@@ -359,6 +373,32 @@ public sealed class DeploymentApplication(
         return (user, api.ExportSession());
     }
 
+    private static string? ValidateContentOptions(DeployOptions options, ProjectContentType contentType)
+    {
+        if (options.Operation == OperationMode.Meta) return null;
+
+        if (contentType == ProjectContentType.World)
+        {
+            if (!string.IsNullOrWhiteSpace(options.BlueprintId) &&
+                !options.BlueprintId.StartsWith("wrld_", StringComparison.Ordinal))
+            {
+                return "A World project requires a Blueprint ID beginning with 'wrld_'.";
+            }
+            return null;
+        }
+
+        if (options.IsNew)
+            return "--new is only used for World projects. An Avatar is new when its scene PipelineManager has no Blueprint ID.";
+        if (!string.IsNullOrWhiteSpace(options.BlueprintId) &&
+            !options.BlueprintId.StartsWith("avtr_", StringComparison.Ordinal))
+        {
+            return "An Avatar project requires a Blueprint ID beginning with 'avtr_'.";
+        }
+        if (options.HasCapacity || options.HasRecommendedCapacity)
+            return "--capacity and --recommended-capacity are only valid for World projects.";
+        return null;
+    }
+
     private async Task<int> ResolveVpmAsync(
         DeployOptions options,
         IReadOnlyCollection<string> secrets,
@@ -400,7 +440,8 @@ public sealed class DeploymentApplication(
         DeployOptions options,
         string? scenePath,
         string resultFile,
-        VrchatSessionTokens sessionTokens)
+        VrchatSessionTokens sessionTokens,
+        ProjectContentType contentType)
     {
         ProcessStartInfo startInfo = new(unityPath) { WorkingDirectory = options.ProjectPath };
         Add(startInfo, "-batchmode");
@@ -412,6 +453,7 @@ public sealed class DeploymentApplication(
 
         startInfo.Environment[DeploymentEnvironment.BlueprintId] = options.BlueprintId;
         startInfo.Environment[DeploymentEnvironment.Operation] = options.Operation.ToString();
+        startInfo.Environment[DeploymentEnvironment.ContentType] = contentType.ToString();
         startInfo.Environment[DeploymentEnvironment.IsNew] = options.IsNew ? "true" : "false";
         startInfo.Environment[DeploymentEnvironment.Username] = options.Username;
         startInfo.Environment[DeploymentEnvironment.Password] = options.Password;
@@ -476,7 +518,8 @@ public sealed class DeploymentApplication(
         int exitCode,
         string stage,
         string message,
-        DeployOptions? options = null)
+        DeployOptions? options = null,
+        ProjectContentType? contentType = null)
     {
         DeploymentResult result = new(
             false,
@@ -485,7 +528,8 @@ public sealed class DeploymentApplication(
             false,
             options?.Operation == OperationMode.Meta ? null : options?.Platform.ToString(),
             stage,
-            message);
+            message,
+            ContentType: contentType?.ToString());
         await WriteResultAsync(result);
         return exitCode;
     }
@@ -508,25 +552,25 @@ public sealed class DeploymentApplication(
 
 VRCLI commands and parameters
 
-  deploy                        Build and upload a world; default command when omitted
+  deploy                        Build and upload project content; auto-detects World or Avatar
   meta                          Update only an existing world's metadata
-  check                         Check Unity compilation and VRChat SDK upload readiness
+  check                         Check Unity compilation and SDK readiness; auto-detects content type
 
   --project <directory>         Unity project directory for deploy/check; default current directory
-  --blueprint <wrld_id>         World override for deploy/check; deploy uses the scene ID when omitted; required by meta
+  --blueprint <content_id>      wrld_ or avtr_ override; deploy/check use the scene ID when omitted; meta requires wrld_
   --new                         Create a private world; deploy only
   --scene <Assets/...unity>     Scene to deploy or check; auto-detected when unambiguous
   --platform <platform>         Deploy/check target: StandaloneWindows64 or Android; default StandaloneWindows64
   --login <username-or-email>   VRChat account; default VRCLI_USERNAME
   --password <password>         Account password; default VRCLI_PASSWORD; visible in shell history
-  --title <name>                World name; metadata option; required with --new
-  --description <text>          World description; metadata option
-  --thumbnail <image>           World image; metadata option; required with --new
+  --title <name>                Content name; required for a new world or avatar
+  --description <text>          Content description; metadata option
+  --thumbnail <image>           Content image; required for a new world or avatar
   --capacity <1+>               Maximum player capacity; metadata option; new-world default 32
   --recommended-capacity <1+>   Recommended player capacity; metadata option; new-world default 16
   --tag <tag>                   Repeatable metadata tag to add
   --remove-tag <tag>            Repeatable metadata tag to remove; meta only
-  --blueprint-output <file>     Save a newly generated wrld_ ID; deploy only
+  --blueprint-output <file>     Save the uploaded wrld_ or avtr_ ID; deploy only
   --two-factor-code <code>      Current VRChat two-factor code
   --two-factor-method <method>  Code type: totp, emailOtp, or otp
   --interactive-two-factor      Prompt only when VRChat requests two-factor authentication
@@ -556,4 +600,5 @@ public sealed record DeploymentResult(
     IReadOnlyList<string>? Information = null,
     IReadOnlyList<string>? CompilerErrors = null,
     IReadOnlyList<string>? CompilerWarnings = null,
-    IReadOnlyList<MetadataChange>? Changes = null);
+    IReadOnlyList<MetadataChange>? Changes = null,
+    string? ContentType = null);

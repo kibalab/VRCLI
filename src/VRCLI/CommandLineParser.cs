@@ -202,6 +202,8 @@ public sealed class CommandLineParser
         {
             if (string.IsNullOrWhiteSpace(blueprint))
                 return ParseResult.Failure("The meta command requires --blueprint <wrld_id>.");
+            if (!blueprint.StartsWith("wrld_", StringComparison.Ordinal))
+                return ParseResult.Failure("The meta command requires a world Blueprint ID beginning with 'wrld_'.");
             if (!hasMetadata)
             {
                 return ParseResult.Failure(
@@ -246,9 +248,11 @@ public sealed class CommandLineParser
             }
             blueprint = newBlueprintOverride ?? "wrld_" + Guid.NewGuid();
         }
-        if (!string.IsNullOrWhiteSpace(blueprint) && !blueprint.StartsWith("wrld_", StringComparison.Ordinal))
+        if (!string.IsNullOrWhiteSpace(blueprint) &&
+            !blueprint.StartsWith("wrld_", StringComparison.Ordinal) &&
+            !blueprint.StartsWith("avtr_", StringComparison.Ordinal))
         {
-            return ParseResult.Failure("--blueprint must be a VRChat world ID beginning with 'wrld_'.");
+            return ParseResult.Failure("--blueprint must be a VRChat content ID beginning with 'wrld_' or 'avtr_'.");
         }
         blueprint ??= string.Empty;
 

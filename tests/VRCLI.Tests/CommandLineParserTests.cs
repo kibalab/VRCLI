@@ -525,7 +525,7 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
-    public void RejectsNonWorldBlueprint()
+    public void AcceptsAvatarBlueprintForProjectTypeValidation()
     {
         CommandLineParser parser = new();
         ParseResult result = parser.Parse(new[]
@@ -536,6 +536,23 @@ public sealed class CommandLineParserTests
             "--password", "1234",
             "--platform", "Android"
         });
+
+        Assert.Null(result.Error);
+        Assert.Equal("avtr_example", result.Options!.BlueprintId);
+    }
+
+    [Fact]
+    public void MetaRejectsAvatarBlueprint()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(
+        [
+            "meta",
+            "--blueprint", "avtr_example",
+            "--title", "Name",
+            "--login", "kibalab",
+            "--password", "1234"
+        ]);
 
         Assert.Contains("wrld_", result.Error);
     }

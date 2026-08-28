@@ -1,0 +1,21 @@
+{
+  "name": "KibaLab.WorldDeployment.World.Editor",
+  "rootNamespace": "KibaLab.WorldDeployment.Editor",
+  "references": [
+    "KibaLab.WorldDeployment.Editor",
+    "VRC.SDKBase",
+    "VRC.SDKBase.Editor",
+    "VRC.SDK3.Editor"
+  ],
+  "includePlatforms": ["Editor"],
+  "autoReferenced": true,
+  "defineConstraints": ["VRCLI_HAS_WORLDS"],
+  "versionDefines": [
+    {
+      "name": "com.vrchat.worlds",
+      "expression": "3.9.0",
+      "define": "VRCLI_HAS_WORLDS"
+    }
+  ],
+  "noEngineReferences": false
+}

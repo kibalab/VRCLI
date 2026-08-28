@@ -22,4 +22,23 @@ public sealed class DeploymentResultTests
         Assert.Contains("\"Blueprint\":\"wrld_example\"", json);
         Assert.DoesNotContain("WorldId", json);
     }
+
+    [Fact]
+    public void SerializesDetectedAvatarContentType()
+    {
+        DeploymentResult result = new(
+            true,
+            ExitCodes.Success,
+            "avtr_example",
+            true,
+            "Android",
+            "complete",
+            "Avatar created.",
+            ContentType: "Avatar");
+
+        string json = JsonSerializer.Serialize(result);
+
+        Assert.Contains("\"Blueprint\":\"avtr_example\"", json);
+        Assert.Contains("\"ContentType\":\"Avatar\"", json);
+    }
 }

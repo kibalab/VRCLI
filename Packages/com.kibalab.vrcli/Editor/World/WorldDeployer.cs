@@ -5,7 +5,6 @@ using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEngine;
 using VRC.Core;
 using VRC.Editor;
@@ -26,9 +25,9 @@ namespace KibaLab.WorldDeployment.Editor
         public static async Task<string> DeployAsync(DeploymentRequest request, string scenePath)
         {
             DeploymentLog.Phase("PREPARE", "Preparing project and scene for the VRChat SDK builder.");
-            ValidateActivePlatform(request.Platform);
+            ContentScene.ValidatePlatform(request.Platform);
             EnsureVrchatProjectSettings();
-            OpenScene(scenePath);
+            ContentScene.Open(scenePath);
 
             VRC_SceneDescriptor descriptor = Object.FindObjectOfType<VRC_SceneDescriptor>();
             if (descriptor == null) throw new InvalidOperationException("VRC_SceneDescriptor was not found in the selected scene.");
@@ -220,64 +219,6 @@ namespace KibaLab.WorldDeployment.Editor
                 }
             }
             if (lastBlueprint != null) lastBlueprint.SetValue(builder, blueprintId);
-        }
-
-        internal static string ResolveScenePath(string scenePath)
-        {
-            string selected = scenePath;
-            if (string.IsNullOrWhiteSpace(selected))
-            {
-                foreach (EditorBuildSettingsScene scene in EditorBuildSettings.scenes)
-                {
-                    if (!scene.enabled) continue;
-                    selected = scene.path;
-                    break;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(selected))
-            {
-                throw new ArgumentException("No scene was specified and EditorBuildSettings has no enabled scene.");
-            }
-
-            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
-            string fullPath = Path.IsPathRooted(selected)
-                ? selected
-                : Path.Combine(projectRoot, selected.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(fullPath))
-            {
-                throw new FileNotFoundException("Scene was not found.", selected);
-            }
-            return selected;
-        }
-
-        internal static void OpenScene(string scenePath)
-        {
-            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
-            DeploymentLog.Info("PREPARE", "Opened build scene: " + scenePath);
-        }
-
-        internal static void ValidateActivePlatform(string requestedPlatform)
-        {
-            BuildTarget expected = requestedPlatform == "Android" ? BuildTarget.Android : BuildTarget.StandaloneWindows64;
-            if (EditorUserBuildSettings.activeBuildTarget != expected)
-            {
-                throw new InvalidOperationException(
-                    "Unity active build target is " + EditorUserBuildSettings.activeBuildTarget +
-                    ", but VRCLI requested " + expected + ".");
-            }
-
-            DeploymentLog.Info("PREPARE", "Active Unity build target matches " + expected + ".");
-
-            if (expected == BuildTarget.Android && EditorUserBuildSettings.androidBuildSubtarget != MobileTextureSubtarget.ASTC)
-            {
-                EditorUserBuildSettings.androidBuildSubtarget = MobileTextureSubtarget.ASTC;
-                DeploymentLog.Info("PREPARE", "Android texture compression target changed to ASTC.");
-            }
-            else if (expected == BuildTarget.Android)
-            {
-                DeploymentLog.Info("PREPARE", "Android texture compression target is ASTC.");
-            }
         }
 
         private static void EnsureVrchatProjectSettings()
