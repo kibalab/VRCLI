@@ -5,7 +5,10 @@ namespace KibaLab.WorldDeployment;
 
 public sealed record MetadataExecutionResult(int ExitCode, DeploymentResult Result);
 
-public sealed class MetadataApplication(TextWriter output, TextWriter error)
+public sealed class MetadataApplication(
+    TextWriter output,
+    TextWriter error,
+    Func<VrchatApiClient>? apiFactory = null)
 {
     private static readonly JsonSerializerOptions ResultJsonOptions = new() { WriteIndented = true };
     private TextWriter logOutput = null!;
@@ -25,7 +28,7 @@ public sealed class MetadataApplication(TextWriter output, TextWriter error)
 
         try
         {
-            using VrchatApiClient api = new();
+            using VrchatApiClient api = apiFactory?.Invoke() ?? new VrchatApiClient();
             VrchatUser user;
             try
             {
@@ -66,7 +69,21 @@ public sealed class MetadataApplication(TextWriter output, TextWriter error)
             WorldMetadataSnapshot desired = ApplyOptions(current, options);
             IReadOnlyList<MetadataChange> changes = VrchatApiClient.Compare(current, desired, options.ThumbnailPath);
             if (changes.Count == 0)
-                throw new VrchatApiException("The requested values are already present; there is nothing to update.");
+            {
+                await ReportAsync(terminalUi, "WORLD", "World metadata is already up to date.", true);
+                if (terminalUi != null) await terminalUi.FinishAsync(true);
+                DeploymentResult unchanged = new(
+                    true,
+                    ExitCodes.Success,
+                    current.Id,
+                    false,
+                    null,
+                    "metadata",
+                    "World metadata is already up to date; no server update was needed.",
+                    Changes: []);
+                await output.WriteLineAsync(JsonSerializer.Serialize(unchanged, ResultJsonOptions));
+                return new MetadataExecutionResult(ExitCodes.Success, unchanged);
+            }
 
             await ReportAsync(terminalUi, "WORLD", "Planned metadata changes:", true);
             foreach (MetadataChange change in changes)
@@ -136,9 +153,11 @@ public sealed class MetadataApplication(TextWriter output, TextWriter error)
 
     public static WorldMetadataSnapshot ApplyOptions(WorldMetadataSnapshot current, DeployOptions options)
     {
-        IReadOnlyList<string> tags = options.HasTags
-            ? current.Tags.Concat(options.Tags).Distinct(StringComparer.Ordinal).ToArray()
-            : current.Tags;
+        IReadOnlyList<string> tags = current.Tags;
+        if (options.HasTags)
+            tags = tags.Concat(options.Tags).Distinct(StringComparer.Ordinal).ToArray();
+        if (options.HasRemovedTags)
+            tags = tags.Except(options.RemovedTags, StringComparer.Ordinal).ToArray();
         WorldMetadataSnapshot desired = current with
         {
             Title = options.Title ?? current.Title,

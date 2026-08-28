@@ -524,7 +524,8 @@ VRCLI commands and parameters
   --thumbnail <image>           World image; metadata option; required with --new
   --capacity <1+>               Maximum player capacity; metadata option; new-world default 32
   --recommended-capacity <1+>   Recommended player capacity; metadata option; new-world default 16
-  --tag <tag>                   Repeatable metadata tag; merged into existing tags
+  --tag <tag>                   Repeatable metadata tag to add
+  --remove-tag <tag>            Repeatable metadata tag to remove; meta only
   --blueprint-output <file>     Save a newly generated wrld_ ID; deploy only
   --two-factor-code <code>      Current VRChat two-factor code
   --two-factor-method <method>  Code type: totp, emailOtp, or otp

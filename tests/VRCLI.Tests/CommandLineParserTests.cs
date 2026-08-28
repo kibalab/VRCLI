@@ -340,6 +340,40 @@ public sealed class CommandLineParserTests
         Assert.Equal(TerminalMode.Json, result.Options?.TerminalMode);
     }
 
+    [Fact]
+    public void ParsesRepeatableMetadataTagRemoval()
+    {
+        ParseResult result = new CommandLineParser().Parse(new[]
+        {
+            "meta",
+            "--blueprint", "wrld_example",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--remove-tag", "author_tag_one",
+            "--remove-tag", "author_tag_two"
+        });
+
+        Assert.Null(result.Error);
+        Assert.True(result.Options?.HasRemovedTags);
+        Assert.Equal(["author_tag_one", "author_tag_two"], result.Options?.RemovedTags);
+    }
+
+    [Fact]
+    public void RejectsAddingAndRemovingTheSameTag()
+    {
+        ParseResult result = new CommandLineParser().Parse(new[]
+        {
+            "meta",
+            "--blueprint", "wrld_example",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--tag", "author_tag_one",
+            "--remove-tag", "author_tag_one"
+        });
+
+        Assert.Contains("cannot be added and removed", result.Error);
+    }
+
     [Theory]
     [InlineData("--json", "--plain")]
     [InlineData("--json", "--tui")]

@@ -248,7 +248,7 @@ public static class InteractiveMetadataEditor
                     MarkChanged("Thumbnail", thumbnailPath != null, thumbnailPath == null ? "unchanged" : Path.GetFileName(thumbnailPath)),
                     MarkChanged("Maximum capacity", current.Capacity != draft.Capacity, draft.Capacity.ToString(CultureInfo.InvariantCulture)),
                     MarkChanged("Recommended capacity", current.RecommendedCapacity != draft.RecommendedCapacity, draft.RecommendedCapacity.ToString(CultureInfo.InvariantCulture)),
-                    MarkChanged("Add tags", !current.Tags.SequenceEqual(draft.Tags, StringComparer.Ordinal), draft.Tags.Count + " total"),
+                    MarkChanged("Manage tags", !current.Tags.SequenceEqual(draft.Tags, StringComparer.Ordinal), draft.Tags.Count + " total"),
                     "Save pending changes",
                     "Choose another world",
                     "Exit metadata session"
@@ -276,6 +276,19 @@ public static class InteractiveMetadataEditor
                     }
                 case 2:
                     {
+                        if (thumbnailPath != null)
+                        {
+                            int action = screen.ReadChoice(
+                                "Pending thumbnail change",
+                                ["Choose a different image", "Discard thumbnail change", "Keep current draft"]);
+                            if (action == 1)
+                            {
+                                thumbnailPath = null;
+                                detailLog = ["Draft · Thumbnail change discarded; server image is unchanged."];
+                                break;
+                            }
+                            if (action == 2) break;
+                        }
                         string value = ReadRequired(screen, "PNG or JPEG path", thumbnailPath, IsImageFile);
                         thumbnailPath = Path.GetFullPath(value);
                         detailLog = ["Draft · Thumbnail: " + (current.ImageUrl ?? "(none)"), "      → " + thumbnailPath];
@@ -297,13 +310,7 @@ public static class InteractiveMetadataEditor
                     }
                 case 5:
                     {
-                        string value = ReadRequired(screen, "Tags to add (comma-separated)");
-                        string[] added = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                            .Where(tag => !tag.Contains('|'))
-                            .Distinct(StringComparer.Ordinal)
-                            .ToArray();
-                        draft = draft with { Tags = draft.Tags.Concat(added).Distinct(StringComparer.Ordinal).ToArray() };
-                        detailLog = ["Draft · Added tags: " + string.Join(", ", added)];
+                        (draft, detailLog) = EditTags(screen, draft);
                         break;
                     }
                 case 6:
@@ -391,6 +398,51 @@ public static class InteractiveMetadataEditor
             throw new VrchatApiException("The authenticator code must contain exactly six digits.");
         return new InteractiveTwoFactorAnswer(choices[selected].Method, code);
     }
+
+    private static (WorldMetadataSnapshot Draft, IReadOnlyList<string> Log) EditTags(
+        WizardTerminalScreen screen,
+        WorldMetadataSnapshot draft)
+    {
+        int action = screen.ReadChoice(
+            "Tag management",
+            ["Add tags", "Remove one tag", "Replace all tags", "Back to metadata"]);
+        if (action == 3) return (draft, ["Draft · Tags unchanged."]);
+
+        if (action == 0)
+        {
+            string value = ReadRequired(screen, "Tags to add (comma-separated)");
+            string[] added = ParseTags(value);
+            IReadOnlyList<string> updated = draft.Tags.Concat(added).Distinct(StringComparer.Ordinal).ToArray();
+            return (draft with { Tags = updated }, ["Draft · Added tags: " + DisplayTags(added)]);
+        }
+
+        if (action == 1)
+        {
+            if (draft.Tags.Count == 0) return (draft, ["Draft · This world has no tags to remove."]);
+            int selected = screen.ReadChoice("Tag to remove", draft.Tags.Append("Back").ToArray());
+            if (selected == draft.Tags.Count) return (draft, ["Draft · Tags unchanged."]);
+            string removed = draft.Tags[selected];
+            IReadOnlyList<string> updated = draft.Tags.Where(tag => tag != removed).ToArray();
+            return (draft with { Tags = updated }, ["Draft · Removed tag: " + removed]);
+        }
+
+        string replacement = screen.ReadText(
+            "Replacement tags (comma-separated; empty clears all)",
+            null,
+            secret: false,
+            acceptEmpty: true);
+        string[] tags = ParseTags(replacement);
+        return (draft with { Tags = tags }, ["Draft · Replaced tags: " + DisplayTags(tags)]);
+    }
+
+    private static string[] ParseTags(string value) => value
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Where(tag => !tag.Contains('|'))
+        .Distinct(StringComparer.Ordinal)
+        .ToArray();
+
+    private static string DisplayTags(IReadOnlyCollection<string> tags) =>
+        tags.Count == 0 ? "(none)" : string.Join(", ", tags);
 
     private static string ReadRequired(
         WizardTerminalScreen screen,

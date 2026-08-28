@@ -28,6 +28,7 @@ public sealed class CommandLineParser
         "capacity",
         "recommended-capacity",
         "tag",
+        "remove-tag",
         "password",
         "platform",
         "two-factor-code",
@@ -65,7 +66,9 @@ public sealed class CommandLineParser
         }
         Dictionary<string, string?> values = new(StringComparer.OrdinalIgnoreCase);
         List<string> tags = new();
+        List<string> removedTags = new();
         bool hasTags = false;
+        bool hasRemovedTags = false;
 
         while (index < args.Length)
         {
@@ -88,20 +91,29 @@ public sealed class CommandLineParser
 
             string key = suppliedKey.ToLowerInvariant();
 
-            if (string.Equals(key, "tag", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(key, "tag", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "remove-tag", StringComparison.OrdinalIgnoreCase))
             {
                 if (index + 1 >= args.Length || args[index + 1].StartsWith("--", StringComparison.Ordinal))
                 {
-                    return ParseResult.Failure("Option --tag requires a value.");
+                    return ParseResult.Failure($"Option --{key} requires a value.");
                 }
 
                 string tag = args[index + 1].Trim();
                 if (tag.Length == 0 || tag.Contains('|') || tag.Contains(','))
                 {
-                    return ParseResult.Failure("--tag must be non-empty and cannot contain '|' or ','.");
+                    return ParseResult.Failure($"--{key} must be non-empty and cannot contain '|' or ','.");
                 }
-                tags.Add(tag);
-                hasTags = true;
+                if (key == "tag")
+                {
+                    tags.Add(tag);
+                    hasTags = true;
+                }
+                else
+                {
+                    removedTags.Add(tag);
+                    hasRemovedTags = true;
+                }
                 index += 2;
                 continue;
             }
@@ -180,7 +192,7 @@ public sealed class CommandLineParser
         bool hasCapacity = values.ContainsKey("capacity");
         bool hasRecommendedCapacity = values.ContainsKey("recommended-capacity");
         bool hasMetadata = title != null || description != null || thumbnailPath != null ||
-                           hasCapacity || hasRecommendedCapacity || hasTags;
+                           hasCapacity || hasRecommendedCapacity || hasTags || hasRemovedTags;
 
         if (operation != OperationMode.Deploy && isNew)
         {
@@ -194,12 +206,21 @@ public sealed class CommandLineParser
             {
                 return ParseResult.Failure(
                     "The meta command requires at least one metadata option: --title, --description, " +
-                    "--thumbnail, --capacity, --recommended-capacity, or --tag.");
+                    "--thumbnail, --capacity, --recommended-capacity, --tag, or --remove-tag.");
             }
         }
         if (operation == OperationMode.Check && hasMetadata)
         {
             return ParseResult.Failure("World metadata options are not valid with the check command.");
+        }
+        if (operation == OperationMode.Deploy && hasRemovedTags)
+        {
+            return ParseResult.Failure("--remove-tag is only valid with the meta command.");
+        }
+        string? conflictingTag = tags.Intersect(removedTags, StringComparer.Ordinal).FirstOrDefault();
+        if (conflictingTag != null)
+        {
+            return ParseResult.Failure($"Tag '{conflictingTag}' cannot be added and removed in the same command.");
         }
         if (operation != OperationMode.Deploy && values.ContainsKey("blueprint-output"))
         {
@@ -324,6 +345,8 @@ public sealed class CommandLineParser
             hasRecommendedCapacity,
             tags.Distinct(StringComparer.Ordinal).ToArray(),
             hasTags,
+            removedTags.Distinct(StringComparer.Ordinal).ToArray(),
+            hasRemovedTags,
             blueprintOutputPath,
             username!,
             password,

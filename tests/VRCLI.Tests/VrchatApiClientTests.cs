@@ -37,6 +37,29 @@ public sealed class VrchatApiClientTests
     }
 
     [Fact]
+    public async Task MetadataNoOpSucceedsWithoutServerUpdate()
+    {
+        RecordingHandler handler = new();
+        StringWriter output = new();
+        MetadataApplication application = new(output, new StringWriter(), () => new VrchatApiClient(handler));
+        DeployOptions options = Options() with
+        {
+            Title = "Before",
+            TerminalMode = TerminalMode.Json
+        };
+
+        MetadataExecutionResult result = await application.RunAsync(options);
+
+        Assert.Equal(ExitCodes.Success, result.ExitCode);
+        Assert.True(result.Result.Success);
+        Assert.Empty(result.Result.Changes!);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.DoesNotContain(handler.Requests, request => request.Method == HttpMethod.Put);
+        using JsonDocument json = JsonDocument.Parse(output.ToString());
+        Assert.Contains("already up to date", json.RootElement.GetProperty("Message").GetString());
+    }
+
+    [Fact]
     public void ComputesReadableBeforeAndAfterChanges()
     {
         WorldMetadataSnapshot before = World(title: "Before", capacity: 32, recommended: 16);
@@ -69,6 +92,24 @@ public sealed class VrchatApiClientTests
         Assert.Equal(["system_approved", "author_tag_social"], desired.Tags);
     }
 
+    [Fact]
+    public void MetadataOptionsCanRemoveTags()
+    {
+        WorldMetadataSnapshot before = World(title: "Before", capacity: 32, recommended: 16) with
+        {
+            Tags = ["system_approved", "author_tag_social"]
+        };
+        DeployOptions options = Options() with
+        {
+            RemovedTags = ["author_tag_social"],
+            HasRemovedTags = true
+        };
+
+        WorldMetadataSnapshot desired = MetadataApplication.ApplyOptions(before, options);
+
+        Assert.Equal(["system_approved"], desired.Tags);
+    }
+
     private static WorldMetadataSnapshot World(string title, int capacity, int recommended) => new(
         "wrld_example",
         "usr_owner",
@@ -91,6 +132,8 @@ public sealed class VrchatApiClientTests
         32,
         16,
         false,
+        false,
+        [],
         false,
         [],
         false,

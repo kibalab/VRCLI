@@ -14,6 +14,8 @@ public sealed record DeployOptions(
     bool HasRecommendedCapacity,
     IReadOnlyList<string> Tags,
     bool HasTags,
+    IReadOnlyList<string> RemovedTags,
+    bool HasRemovedTags,
     string? BlueprintOutputPath,
     string Username,
     string Password,
