@@ -54,6 +54,17 @@ export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Con
 
 Run `VRCLI.exe` on Windows or `./VRCLI` on macOS.
 
+## Release
+
+Set `VersionPrefix` in `Directory.Build.props`, commit it, then push the matching `vX.Y.Z` tag:
+
+```bash
+git tag -a v0.16.0 -m "VRCLI v0.16.0"
+git push origin v0.16.0
+```
+
+GitHub Actions tests the tagged commit and publishes self-contained Windows and macOS archives with SHA-256 checksums to a GitHub Release. A tag that does not match `VersionPrefix` fails without creating a release.
+
 ## Use it interactively
 
 Run one of these commands in a local terminal:

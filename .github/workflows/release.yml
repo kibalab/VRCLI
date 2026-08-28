@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Verify tag and project version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props)"
+          if [[ -z "$version" ]]; then
+            echo "VersionPrefix was not found in Directory.Build.props." >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match project version v$version." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        run: dotnet test VRCLI.sln --configuration Release
+
+      - name: Build release packages
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/packages
+
+          for runtime in win-x64 osx-x64 osx-arm64; do
+            dotnet publish src/VRCLI/VRCLI.csproj \
+              --configuration Release \
+              --runtime "$runtime" \
+              --self-contained true \
+              --output "artifacts/$runtime" \
+              -p:Version="$VERSION"
+          done
+
+          chmod +x artifacts/osx-x64/VRCLI artifacts/osx-arm64/VRCLI
+          (cd artifacts/win-x64 && zip -q -r "../packages/VRCLI-$VERSION-win-x64.zip" .)
+          tar -C artifacts/osx-x64 -czf "artifacts/packages/VRCLI-$VERSION-osx-x64.tar.gz" .
+          tar -C artifacts/osx-arm64 -czf "artifacts/packages/VRCLI-$VERSION-osx-arm64.tar.gz" .
+          (cd artifacts/packages && sha256sum VRCLI-* > SHA256SUMS.txt)
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/packages/* \
+            --verify-tag \
+            --generate-notes \
+            --title "VRCLI $GITHUB_REF_NAME"
