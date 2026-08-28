@@ -155,6 +155,23 @@ public sealed class TerminalProgressRendererTests
         Assert.Equal(expected, CountOccurrences(screen, "│ "));
     }
 
+    [Fact]
+    public async Task ClearsAndRebuildsTheScreenAfterTerminalResize()
+    {
+        (int Width, int Height) size = (80, 24);
+        StringWriter output = new();
+        TerminalProgressRenderer renderer = new(output, () => size);
+        renderer.Start();
+        renderer.Report("AUTH", "Checking account", true);
+
+        size = (110, 36);
+        await Task.Delay(250);
+        await renderer.FinishAsync(true);
+
+        Assert.True(CountOccurrences(output.ToString(), "\x1b[2J\x1b[H") >= 2);
+        Assert.Contains("Checking account", CaptureScreen(output.ToString()));
+    }
+
     private static int CountOccurrences(string value, string pattern)
     {
         int count = 0;

@@ -6,7 +6,10 @@ internal sealed class WizardTerminalScreen : IDisposable
 {
     private static readonly object RetainedGate = new();
     private static bool retainedScreen;
+    private readonly object renderGate = new();
+    private readonly CancellationTokenSource resizeMonitorCancellation = new();
     private readonly List<string> previousFrame = [];
+    private (int Width, int Height)? lastSize;
     private readonly List<(string Label, string Value)> summary = [];
     private readonly CancellationToken cancellationToken;
     private IReadOnlyList<string> context = [];
@@ -23,6 +26,7 @@ internal sealed class WizardTerminalScreen : IDisposable
     private int selectedChoice;
     private bool entered;
     private bool retainOnDispose;
+    private Task? resizeMonitor;
     private volatile string? interruptMessage;
 
     private bool UseColor => Environment.GetEnvironmentVariable("NO_COLOR") == null;
@@ -39,6 +43,7 @@ internal sealed class WizardTerminalScreen : IDisposable
         TerminalInterruptFeedback.Attach(ShowInterruptFeedback);
         Console.Write("\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H");
         Render();
+        resizeMonitor = MonitorResizeAsync(resizeMonitorCancellation.Token);
     }
 
     public void SetRoute(params string[] labels)
@@ -68,12 +73,15 @@ internal sealed class WizardTerminalScreen : IDisposable
 
     public void AddSummary(string label, string value)
     {
-        int existing = summary.FindIndex(row => string.Equals(row.Label, label, StringComparison.Ordinal));
-        if (existing >= 0) summary[existing] = (label, value);
-        else summary.Add((label, value));
-        busyMessage = null;
-        notice = null;
-        Render();
+        lock (renderGate)
+        {
+            int existing = summary.FindIndex(row => string.Equals(row.Label, label, StringComparison.Ordinal));
+            if (existing >= 0) summary[existing] = (label, value);
+            else summary.Add((label, value));
+            busyMessage = null;
+            notice = null;
+            Render();
+        }
     }
 
     public void SetBusy(string message)
@@ -164,13 +172,16 @@ internal sealed class WizardTerminalScreen : IDisposable
 
     public void ShowReview(IReadOnlyList<(string Label, string Value)> rows)
     {
-        summary.Clear();
-        summary.AddRange(rows);
-        context = [];
-        notice = null;
-        busyMessage = null;
-        ClearPrompt();
-        Render();
+        lock (renderGate)
+        {
+            summary.Clear();
+            summary.AddRange(rows);
+            context = [];
+            notice = null;
+            busyMessage = null;
+            ClearPrompt();
+            Render();
+        }
     }
 
     public void RetainForOperation()
@@ -205,6 +216,17 @@ internal sealed class WizardTerminalScreen : IDisposable
     {
         if (!entered) return;
         entered = false;
+        resizeMonitorCancellation.Cancel();
+        if (resizeMonitor != null)
+        {
+            try
+            {
+                resizeMonitor.GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
         TerminalInterruptFeedback.Detach(ShowInterruptFeedback);
         if (retainOnDispose) return;
         Console.Write("\x1b[?25h\x1b[?1049l");
@@ -213,8 +235,18 @@ internal sealed class WizardTerminalScreen : IDisposable
 
     private void Render(bool force = false)
     {
-        if (!entered) return;
-        (int width, int height) = Size();
+        lock (renderGate)
+        {
+            if (!entered) return;
+            (int width, int height) = Size();
+        bool resized = lastSize.HasValue && lastSize.Value != (width, height);
+        lastSize = (width, height);
+        if (resized)
+        {
+            Console.Write("\x1b[2J\x1b[H");
+            previousFrame.Clear();
+            force = true;
+        }
         List<string> frame = [];
         string routeText = width >= 64
             ? string.Join(
@@ -238,13 +270,13 @@ internal sealed class WizardTerminalScreen : IDisposable
         }
         frame.Add(Paint(" " + new string('─', width - 2), "90"));
         frame.Add(string.Empty);
-        frame.Add(" " + Paint(title, "1"));
+        frame.Add(" " + Paint(Truncate(title, width - 2), "1"));
         frame.Add(Paint("    " + Truncate(description, width - 5), "90"));
         frame.Add(string.Empty);
 
         int summaryLimit = Math.Max(1, height - 17 - (fullLogo ? 6 : 0) - (choices?.Count ?? 0));
         foreach ((string label, string value) in summary.TakeLast(summaryLimit))
-            frame.Add(" " + Paint("✓", "32;1") + "  " + Paint(label.PadRight(11), "90") + Truncate(value, width - 18));
+            frame.Add(" " + Paint("✓", "32;1") + "  " + Paint(TerminalText.PadRight(label, 11), "90") + Truncate(value, width - 18));
 
         if (context.Count > 0)
         {
@@ -256,7 +288,7 @@ internal sealed class WizardTerminalScreen : IDisposable
         if (busyMessage != null)
         {
             frame.Add(string.Empty);
-            frame.Add(" " + Paint("⠋", "36;1") + "  " + busyMessage);
+            frame.Add(" " + Paint("⠋", "36;1") + "  " + Truncate(busyMessage, width - 6));
         }
         if (notice != null)
         {
@@ -264,7 +296,10 @@ internal sealed class WizardTerminalScreen : IDisposable
             frame.Add(" " + Paint("!", "33;1") + "  " + Truncate(notice, width - 6));
         }
 
-        int promptHeight = choices == null ? 5 : choices.Count + 5;
+        int visibleChoiceCount = choices == null
+            ? 0
+            : Math.Min(choices.Count, Math.Max(1, height - 12));
+        int promptHeight = choices == null ? 5 : visibleChoiceCount + 5;
         while (frame.Count < height - promptHeight) frame.Add(string.Empty);
         if (frame.Count > height - promptHeight) frame.RemoveRange(height - promptHeight, frame.Count - (height - promptHeight));
 
@@ -275,17 +310,23 @@ internal sealed class WizardTerminalScreen : IDisposable
         }
         else if (choices == null)
         {
-            frame.Add(" " + Paint("›", "36;1") + "  " + promptLabel);
-            string display = string.IsNullOrEmpty(promptValue) ? Paint("Type a value", "90") : promptValue;
-            frame.Add("    " + Paint("▌ ", "36;1") + display);
+            frame.Add(" " + Paint("›", "36;1") + "  " + Truncate(promptLabel, width - 6));
+            bool empty = string.IsNullOrEmpty(promptValue);
+            string display = Truncate(empty ? "Type a value" : promptValue!, width - 7);
+            frame.Add("    " + Paint("▌ ", "36;1") + (empty ? Paint(display, "90") : display));
         }
         else
         {
-            frame.Add(" " + Paint("?", "36;1") + "  " + promptLabel);
-            for (int index = 0; index < choices.Count; index++)
+            frame.Add(" " + Paint("?", "36;1") + "  " + Truncate(promptLabel, width - 6));
+            int firstChoice = Math.Clamp(
+                selectedChoice - visibleChoiceCount / 2,
+                0,
+                Math.Max(0, choices.Count - visibleChoiceCount));
+            for (int index = firstChoice; index < firstChoice + visibleChoiceCount; index++)
             {
                 string marker = index == selectedChoice ? Paint("❯", "36;1") : " ";
-                string choice = index == selectedChoice ? Paint(choices[index], "36;1") : choices[index];
+                string fittedChoice = Truncate(choices[index], width - 7);
+                string choice = index == selectedChoice ? Paint(fittedChoice, "36;1") : fittedChoice;
                 frame.Add($"   {marker}  {choice}");
             }
         }
@@ -303,7 +344,17 @@ internal sealed class WizardTerminalScreen : IDisposable
         }
         previousFrame.Clear();
         previousFrame.AddRange(frame);
-        Console.Out.Flush();
+            Console.Out.Flush();
+        }
+    }
+
+    private async Task MonitorResizeAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(100, cancellationToken);
+            if (lastSize != Size()) Render(force: true);
+        }
     }
 
     private string Step(string number, string label) => number == step
@@ -332,6 +383,7 @@ internal sealed class WizardTerminalScreen : IDisposable
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (lastSize != Size()) Render(force: true);
             string? message = interruptMessage;
             if (message != null)
             {
@@ -361,7 +413,7 @@ internal sealed class WizardTerminalScreen : IDisposable
     private static string Truncate(string value, int width)
     {
         width = Math.Max(1, width);
-        return value.Length <= width ? value : value[..Math.Max(1, width - 1)] + "…";
+        return TerminalText.Truncate(value, width);
     }
 
     private static (int Width, int Height) Size()

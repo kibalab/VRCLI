@@ -38,6 +38,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
     private readonly CancellationTokenSource animationCancellation = new();
     private readonly long deploymentStarted = Stopwatch.GetTimestamp();
     private readonly List<string> previousFrame = [];
+    private (int Width, int Height)? lastSize;
     private Task? animationTask;
     private string? activeStage;
     private string lastMessage = "Preparing deployment";
@@ -361,9 +362,18 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
             await Task.Delay(120, cancellationToken);
             lock (gate)
             {
-                if (paused || finished || activeStage == null) continue;
-                spinnerIndex = (spinnerIndex + 1) % Spinner.Length;
-                RenderFrameUnsafe();
+                if (finished) continue;
+                bool resized = lastSize != CurrentSize();
+                if (resized)
+                {
+                    RenderFrameUnsafe(force: true);
+                    continue;
+                }
+                if (!paused && activeStage != null)
+                {
+                    spinnerIndex = (spinnerIndex + 1) % Spinner.Length;
+                    RenderFrameUnsafe();
+                }
             }
         }
     }
@@ -417,7 +427,16 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
     private void RenderFrameUnsafe(bool force = false)
     {
         if (!started) return;
-        List<string> frame = BuildFrameUnsafe();
+        (int Width, int Height) size = CurrentSize();
+        bool resized = lastSize.HasValue && lastSize.Value != size;
+        lastSize = size;
+        if (resized)
+        {
+            output.Write("\x1b[2J\x1b[H");
+            previousFrame.Clear();
+            force = true;
+        }
+        List<string> frame = BuildFrameUnsafe(size);
         int rows = Math.Max(frame.Count, previousFrame.Count);
         for (int index = 0; index < rows; index++)
         {
@@ -432,9 +451,9 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         output.Flush();
     }
 
-    private List<string> BuildFrameUnsafe()
+    private List<string> BuildFrameUnsafe((int Width, int Height) size)
     {
-        (int width, int height) = CurrentSize();
+        (int width, int height) = size;
         List<string> lines = [];
         IReadOnlyList<string> logo = height >= 24 ? Branding.Fit(width - 2) : ["VRCLI"];
         if (logo.Count > 1)
@@ -539,19 +558,24 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
             for (int index = 0; index < verificationOptions.Count; index++)
             {
                 string marker = index == verificationSelection ? Paint("❯", "36;1") : " ";
+                string fitted = Truncate(verificationOptions[index].Label, width - 9);
                 string label = index == verificationSelection
-                    ? Paint(verificationOptions[index].Label, "36;1")
-                    : verificationOptions[index].Label;
+                    ? Paint(fitted, "36;1")
+                    : fitted;
                 lines.Add($" │  {marker}  {label}");
             }
             lines.Add(Paint(" │  ↑/↓ or j/k move  ·  Enter confirm  ·  Esc cancel", "90"));
         }
         else
         {
-            lines.Add(" │  " + Paint("›", "36;1") + "  " + (verificationInputLabel ?? "Verification code"));
+            lines.Add(" │  " + Paint("›", "36;1") + "  " +
+                      Truncate(verificationInputLabel ?? "Verification code", width - 9));
             lines.Add(" │     " + Paint("▌ ", "36;1") +
-                      (string.IsNullOrEmpty(verificationInputValue) ? Paint("Type a value", "90") : verificationInputValue));
-            if (verificationNotice != null) lines.Add(" │  " + Paint("!  " + verificationNotice, "33;1"));
+                      (string.IsNullOrEmpty(verificationInputValue)
+                          ? Paint("Type a value", "90")
+                          : Truncate(verificationInputValue, width - 9)));
+            if (verificationNotice != null)
+                lines.Add(" │  " + Paint(Truncate("!  " + verificationNotice, width - 5), "33;1"));
             lines.Add(Paint(" │  Enter confirm  ·  Esc cancel", "90"));
         }
         lines.Add(Paint(" ╰" + new string('─', width - 2) + "╯", "33"));
@@ -700,8 +724,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
     private static string Truncate(string value, int width)
     {
         width = Math.Max(1, width);
-        if (value.Length <= width) return value;
-        return value[..Math.Max(1, width - 1)] + "…";
+        return TerminalText.Truncate(value, width);
     }
 
     private static string VersionText() =>

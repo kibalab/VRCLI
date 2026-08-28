@@ -224,39 +224,81 @@ public static class InteractiveWizard
         string authenticationDescription,
         Dictionary<string, string> temporarySecrets)
     {
+        string? projectPath = null;
+        string? scene = null;
+        int mode = 0;
+        int platform = 0;
+        string blueprint = string.Empty;
+        string name = string.Empty;
+        string description = string.Empty;
+        string thumbnail = string.Empty;
+        int capacity = 32;
+        int recommended = 16;
+        string blueprintOutput = string.Empty;
+        int editSection = 0;
+
         while (true)
         {
             WriteSection("02", "DEPLOYMENT", "Choose the project, target world, scene, and platform.");
-            string projectPath = PromptRequired("Unity project path", Directory.GetCurrentDirectory(), IsUnityProject);
-            activeScreen?.AddSummary("Project", projectPath);
-            string scene = PromptScene(projectPath);
-            activeScreen?.AddSummary("Scene", scene);
-            int mode = PromptChoice("Deployment mode", ["Update an existing world", "Create a new private world"]);
-            activeScreen?.AddSummary("Mode", mode == 0 ? "Update existing world" : "Create new private world");
-            int platform = PromptChoice("Target platform", ["StandaloneWindows64", "Android (Quest)"]);
-            activeScreen?.AddSummary("Platform", platform == 0 ? "StandaloneWindows64" : "Android (Quest)");
+            if (projectPath == null || editSection == 1)
+            {
+                projectPath = PromptRequired(
+                    "Unity project path",
+                    projectPath ?? Directory.GetCurrentDirectory(),
+                    IsUnityProject);
+                scene = PromptScene(projectPath);
+                activeScreen?.AddSummary("Project", projectPath);
+                activeScreen?.AddSummary("Scene", scene);
+            }
+            if (editSection is 0 or 2)
+            {
+                mode = PromptChoice("Deployment mode", ["Update an existing world", "Create a new private world"]);
+                activeScreen?.AddSummary("Mode", mode == 0 ? "Update existing world" : "Create new private world");
+                if (mode == 0)
+                {
+                    blueprint = PromptOptionalBlueprint();
+                    activeScreen?.AddSummary(
+                        "Target",
+                        string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint);
+                }
+                else
+                {
+                    name = PromptRequired("World name", string.IsNullOrWhiteSpace(name) ? null : name);
+                    description = Prompt("Description", string.IsNullOrWhiteSpace(description) ? null : description);
+                    thumbnail = PromptRequired(
+                        "Thumbnail path",
+                        string.IsNullOrWhiteSpace(thumbnail) ? null : thumbnail,
+                        File.Exists);
+                    capacity = PromptInteger("Maximum capacity", capacity, 1, int.MaxValue);
+                    recommended = PromptInteger("Recommended capacity", Math.Min(recommended, capacity), 1, capacity);
+                    blueprintOutput = Prompt(
+                        "Blueprint output file",
+                        string.IsNullOrWhiteSpace(blueprintOutput)
+                            ? Path.Combine(projectPath, "blueprint.txt")
+                            : blueprintOutput);
+                    activeScreen?.AddSummary("Target", name + " (new private world)");
+                }
+            }
+            if (editSection is 0 or 3)
+            {
+                platform = PromptChoice("Target platform", ["StandaloneWindows64", "Android (Quest)"]);
+                activeScreen?.AddSummary("Platform", platform == 0 ? "StandaloneWindows64" : "Android (Quest)");
+            }
+            editSection = -1;
 
             List<string> arguments = CreateArguments("deploy", username);
             Add(arguments, "--project", projectPath);
             Add(arguments, "--platform", platform == 0 ? "StandaloneWindows64" : "Android");
-            Add(arguments, "--scene", scene);
+            Add(arguments, "--scene", scene!);
 
             string targetDescription;
             if (mode == 0)
             {
-                string blueprint = PromptOptionalBlueprint();
                 if (!string.IsNullOrWhiteSpace(blueprint)) Add(arguments, "--blueprint", blueprint);
                 targetDescription = string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint;
-                activeScreen?.AddSummary("Target", targetDescription);
             }
             else
             {
-                string name = PromptRequired("World name");
-                string description = Prompt("Description");
-                string thumbnail = PromptRequired("Thumbnail path", null, File.Exists);
-                int capacity = PromptInteger("Maximum capacity", 32, 1, int.MaxValue);
-                int recommended = PromptInteger("Recommended capacity", Math.Min(16, capacity), 1, capacity);
-                string blueprintOutput = Prompt("Blueprint output file", Path.Combine(projectPath, "blueprint.txt"));
                 arguments.Add("--new");
                 Add(arguments, "--title", name);
                 if (!string.IsNullOrWhiteSpace(description)) Add(arguments, "--description", description);
@@ -265,14 +307,15 @@ public static class InteractiveWizard
                 Add(arguments, "--recommended-capacity", recommended.ToString(CultureInfo.InvariantCulture));
                 if (!string.IsNullOrWhiteSpace(blueprintOutput)) Add(arguments, "--blueprint-output", blueprintOutput);
                 targetDescription = name + " (new private world)";
-                activeScreen?.AddSummary("Target", targetDescription);
             }
 
             bool acceptsOwnership = PromptYesNo("I certify that I have the rights to upload this content", true);
             if (!acceptsOwnership)
             {
-                activeScreen?.SetNotice("Deployment cancelled because content ownership was not certified.");
-                ClearSecrets(temporarySecrets);
+                int ownershipAction = PromptChoice(
+                    "Content ownership must be certified before upload",
+                    ["Return to the deployment plan", "Cancel deployment"]);
+                if (ownershipAction == 0) continue;
                 return null;
             }
             arguments.Add("--yes");
@@ -285,12 +328,23 @@ public static class InteractiveWizard
                     ("Auth", authenticationDescription),
                     ("Target", targetDescription),
                     ("Project", projectPath),
-                    ("Scene", scene),
+                    ("Scene", scene!),
                     ("Platform", platform == 0 ? "StandaloneWindows64" : "Android")
                 ]);
 
-            if (!PromptYesNo("Start build and upload now", true))
+            int reviewAction = PromptChoice(
+                "Deployment plan",
+                [
+                    "Start build and upload",
+                    "Edit project and scene",
+                    "Edit target and metadata",
+                    "Edit platform",
+                    "Cancel deployment"
+                ]);
+            if (reviewAction == 4) return null;
+            if (reviewAction != 0)
             {
+                editSection = reviewAction;
                 continue;
             }
             screen.RetainForOperation();
@@ -304,42 +358,68 @@ public static class InteractiveWizard
         string authenticationDescription,
         Dictionary<string, string> temporarySecrets)
     {
-        WriteSection("02", "PREFLIGHT", "Choose the project, scene, and platform to inspect without uploading.");
-        string projectPath = PromptRequired("Unity project path", Directory.GetCurrentDirectory(), IsUnityProject);
-        activeScreen?.AddSummary("Project", projectPath);
-        string scene = PromptScene(projectPath);
-        activeScreen?.AddSummary("Scene", scene);
-        int platform = PromptChoice("Target platform", ["StandaloneWindows64", "Android (Quest)"]);
-        string platformName = platform == 0 ? "StandaloneWindows64" : "Android";
-        activeScreen?.AddSummary("Platform", platformName);
-
-        string blueprint = PromptOptionalBlueprint();
-        activeScreen?.AddSummary("Target", string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint);
-
-        List<string> arguments = CreateArguments("check", username);
-        Add(arguments, "--project", projectPath);
-        Add(arguments, "--scene", scene);
-        Add(arguments, "--platform", platformName);
-        if (!string.IsNullOrWhiteSpace(blueprint)) Add(arguments, "--blueprint", blueprint);
-
-        WriteReview(
-            "Confirm the read-only preflight plan. No bundle or server update will be created.",
-            [
-                ("Account", username),
-                ("Auth", authenticationDescription),
-                ("Target", string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint),
-                ("Project", projectPath),
-                ("Scene", scene),
-                ("Platform", platformName)
-            ]);
-        if (!PromptYesNo("Run the preflight check now", true))
+        string? projectPath = null;
+        string? scene = null;
+        string blueprint = string.Empty;
+        int platform = 0;
+        int editSection = 0;
+        while (true)
         {
-            ClearSecrets(temporarySecrets);
-            return null;
-        }
+            WriteSection("02", "PREFLIGHT", "Choose the project, scene, and platform to inspect without uploading.");
+            if (projectPath == null || editSection == 1)
+            {
+                projectPath = PromptRequired(
+                    "Unity project path",
+                    projectPath ?? Directory.GetCurrentDirectory(),
+                    IsUnityProject);
+                scene = PromptScene(projectPath);
+                activeScreen?.AddSummary("Project", projectPath);
+                activeScreen?.AddSummary("Scene", scene);
+            }
+            if (editSection is 0 or 2)
+            {
+                blueprint = PromptOptionalBlueprint();
+                activeScreen?.AddSummary(
+                    "Target",
+                    string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint);
+            }
+            if (editSection is 0 or 3)
+            {
+                platform = PromptChoice("Target platform", ["StandaloneWindows64", "Android (Quest)"]);
+                activeScreen?.AddSummary("Platform", platform == 0 ? "StandaloneWindows64" : "Android");
+            }
+            editSection = -1;
+            string platformName = platform == 0 ? "StandaloneWindows64" : "Android";
 
-        screen.RetainForOperation();
-        return new InteractiveWizardResult(arguments.ToArray(), temporarySecrets);
+            List<string> arguments = CreateArguments("check", username);
+            Add(arguments, "--project", projectPath);
+            Add(arguments, "--scene", scene!);
+            Add(arguments, "--platform", platformName);
+            if (!string.IsNullOrWhiteSpace(blueprint)) Add(arguments, "--blueprint", blueprint);
+
+            WriteReview(
+                "Confirm the preflight plan. No bundle or server update will be created.",
+                [
+                    ("Account", username),
+                    ("Auth", authenticationDescription),
+                    ("Target", string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint),
+                    ("Project", projectPath),
+                    ("Scene", scene!),
+                    ("Platform", platformName)
+                ]);
+            int reviewAction = PromptChoice(
+                "Preflight plan",
+                ["Run preflight check", "Edit project and scene", "Edit target", "Edit platform", "Cancel"]);
+            if (reviewAction == 4) return null;
+            if (reviewAction != 0)
+            {
+                editSection = reviewAction;
+                continue;
+            }
+
+            screen.RetainForOperation();
+            return new InteractiveWizardResult(arguments.ToArray(), temporarySecrets);
+        }
     }
 
     private static string PromptOptionalBlueprint()
@@ -437,9 +517,9 @@ public static class InteractiveWizard
 
     private static void WriteReviewRow(string label, string value, int width)
     {
-        string prefix = "  " + label.PadRight(10);
+        string prefix = "  " + TerminalText.PadRight(label, 10);
         string content = prefix + Truncate(value, Math.Max(8, width - prefix.Length));
-        Console.WriteLine("  " + Paint("│", "90") + content.PadRight(width) + Paint("│", "90"));
+        Console.WriteLine("  " + Paint("│", "90") + TerminalText.PadRight(content, width) + Paint("│", "90"));
     }
 
     private static string Paint(string value, string code) =>
@@ -459,9 +539,7 @@ public static class InteractiveWizard
         }
     }
 
-    private static string Truncate(string value, int width) => value.Length <= width
-        ? value
-        : value[..Math.Max(1, width - 1)] + "…";
+    private static string Truncate(string value, int width) => TerminalText.Truncate(value, width);
 
     private static string PromptSixDigitCode(string label)
     {
