@@ -80,6 +80,8 @@ VRCLI_TOTP_SECRET=BASE32_TOTP_SETUP_SECRET
 
 `VRCLI_TOTP_SECRET` is the permanent authenticator setup secret, not a six-digit code. Store it as a protected CI secret and never commit it.
 
+A CI runner does not need a saved local session. VRCLI signs in with the username and password, detects the TOTP challenge, generates the current code in memory, and continues unattended. Do not use `--interactive-two-factor` in CI.
+
 Credentials can also be passed directly:
 
 ```powershell
