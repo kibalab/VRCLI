@@ -152,7 +152,7 @@ Unity 컴파일, 프로젝트 설정, SDK 검증, 소유권과 업로드 동의�
 
 ## Windows와 Android 병렬 배포
 
-별도의 프로젝트 작업공간을 사용하세요. Unity는 하나의 프로젝트 디렉터리를 두 프로세스에서 안전하게 열 수 없습니다.
+Jenkins 컨트롤러나 GitHub Actions 서비스는 Linux에서 실행해도 되지만, `deploy`와 `check` 작업은 Windows 러너에서 실행해야 합니다. VRChat SDK는 Linux를 공식 지원하지 않으므로 Linux 월드 업로드는 보장할 수 없습니다. Unity를 실행하지 않는 `meta`는 Linux에서도 사용할 수 있습니다. Unity는 하나의 프로젝트 디렉터리를 두 프로세스에서 안전하게 열 수 없으므로 별도의 작업공간을 사용하세요.
 
 ```yaml
 jobs:
@@ -160,7 +160,7 @@ jobs:
     strategy:
       matrix:
         platform: [StandaloneWindows64, Android]
-    runs-on: self-hosted
+    runs-on: [self-hosted, windows, x64, vrchat-unity]
     steps:
       - uses: actions/checkout@v4
       - shell: pwsh
@@ -176,7 +176,7 @@ jobs:
           --yes --json
 ```
 
-각 러너에는 Unity, VRCLI, VPM CLI, 대상 플랫폼 모듈과 유효한 Unity 라이선스가 필요합니다. 두 작업을 동시에 실행하려면 사용 가능한 러너가 두 대 필요합니다.
+각 Windows 러너에는 Unity, VRCLI, VPM CLI, 대상 플랫폼 모듈과 유효한 Unity 라이선스가 필요합니다. 두 작업을 동시에 실행하려면 `vrchat-unity` 라벨을 가진 러너가 두 대 필요합니다.
 
 ## 결과
 

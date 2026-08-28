@@ -152,7 +152,7 @@ Unity のコンパイル、プロジェクト設定、SDK 検証、所有権、�
 
 ## Windows と Android の並列デプロイ
 
-別々のプロジェクトワークスペースを使用してください。Unity は 1 つのプロジェクトディレクトリを 2 つのプロセスから安全に開けません。
+Jenkins コントローラーや GitHub Actions サービスは Linux 上で実行できますが、`deploy` と `check` ジョブには Windows ランナーを使用してください。VRChat SDK は Linux を正式にサポートしていないため、Linux でのワールドアップロードは保証できません。Unity を起動しない `meta` は Linux でも使用できます。Unity は 1 つのプロジェクトディレクトリを 2 つのプロセスから安全に開けないため、別々のワークスペースを使用してください。
 
 ```yaml
 jobs:
@@ -160,7 +160,7 @@ jobs:
     strategy:
       matrix:
         platform: [StandaloneWindows64, Android]
-    runs-on: self-hosted
+    runs-on: [self-hosted, windows, x64, vrchat-unity]
     steps:
       - uses: actions/checkout@v4
       - shell: pwsh
@@ -176,7 +176,7 @@ jobs:
           --yes --json
 ```
 
-各ランナーには Unity、VRCLI、VPM CLI、対象プラットフォームモジュール、有効な Unity ライセンスが必要です。2 つのジョブを同時に実行するには、利用可能なランナーが 2 台必要です。
+各 Windows ランナーには Unity、VRCLI、VPM CLI、対象プラットフォームモジュール、有効な Unity ライセンスが必要です。2 つのジョブを同時に実行するには、`vrchat-unity` ラベルを持つランナーが 2 台必要です。
 
 ## 結果
 

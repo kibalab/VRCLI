@@ -152,7 +152,7 @@ This checks Unity compilation, project configuration, SDK validation, ownership,
 
 ## Deploy Windows and Android in parallel
 
-Use separate project workspaces. Unity cannot safely open one project directory in two processes.
+The Jenkins controller or GitHub Actions service may run on Linux, but `deploy` and `check` jobs should use Windows runners. The VRChat SDK does not officially support Linux, so Linux world uploads cannot be guaranteed; `meta` does not start Unity and can run there. Use separate project workspaces because Unity cannot safely open one project directory in two processes.
 
 ```yaml
 jobs:
@@ -160,7 +160,7 @@ jobs:
     strategy:
       matrix:
         platform: [StandaloneWindows64, Android]
-    runs-on: self-hosted
+    runs-on: [self-hosted, windows, x64, vrchat-unity]
     steps:
       - uses: actions/checkout@v4
       - shell: pwsh
@@ -176,7 +176,7 @@ jobs:
           --yes --json
 ```
 
-Each runner needs Unity, VRCLI, VPM CLI, the target platform module, and a valid Unity license. Two simultaneous jobs require two available runners.
+Each Windows runner needs Unity, VRCLI, VPM CLI, the target platform module, and a valid Unity license. Two simultaneous jobs require two available runners with the `vrchat-unity` label.
 
 ## Result
 
