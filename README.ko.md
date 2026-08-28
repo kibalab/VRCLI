@@ -54,17 +54,6 @@ export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Con
 
 Windows에서는 `VRCLI.exe`, macOS에서는 `./VRCLI`를 실행합니다.
 
-## 릴리스
-
-`Directory.Build.props`의 `VersionPrefix`를 변경하고 커밋한 뒤, 일치하는 `vX.Y.Z` 태그를 푸시합니다.
-
-```bash
-git tag -a v0.16.0 -m "VRCLI v0.16.0"
-git push origin v0.16.0
-```
-
-GitHub Actions가 태그 시점의 커밋을 테스트하고, 자체 포함된 Windows 및 macOS 압축 파일과 SHA-256 체크섬을 GitHub Release에 게시합니다. 태그와 `VersionPrefix`가 다르면 릴리스를 만들지 않고 실패합니다.
-
 ## 대화형으로 사용
 
 로컬 터미널에서 원하는 명령을 실행하세요.
