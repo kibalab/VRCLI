@@ -25,16 +25,17 @@ public sealed class MetadataApplication(TextWriter output, TextWriter error)
 
         try
         {
-            await ReportAsync(terminalUi, "BOOT", "Metadata request validated; Unity will not be started.", true);
             using VrchatApiClient api = new();
             VrchatUser user;
             try
             {
+                await ReportAsync(terminalUi, "AUTH", "Validating account credentials with VRChat.", true);
                 user = await VrchatAuthentication.SignInAsync(
                     api,
                     options.Username,
                     options.Password,
                     options.TwoFactorCode,
+                    options.TwoFactorMethod,
                     options.TotpSecret,
                     options.InteractiveTwoFactor
                         ? methods => Task.FromResult(terminalUi != null
@@ -49,6 +50,10 @@ public sealed class MetadataApplication(TextWriter output, TextWriter error)
                 throw new VrchatAuthenticationException(exception.Message);
             }
             await ReportAsync(terminalUi, "AUTH", $"Signed in as {user.DisplayName} ({user.Id}).");
+            await ReportAsync(terminalUi, "BOOT", "Metadata request validated; Unity will not be started.", true);
+
+            if (options.ThumbnailPath != null && !File.Exists(options.ThumbnailPath))
+                throw new VrchatApiException("Thumbnail was not found: " + options.ThumbnailPath);
 
             await ReportAsync(terminalUi, "CONTEXT", "Loading " + options.BlueprintId + " from VRChat.", true);
             WorldMetadataSnapshot current = await api.GetWorldAsync(options.BlueprintId, cancellationToken);
@@ -198,6 +203,7 @@ public static class VrchatAuthentication
         string username,
         string password,
         string? twoFactorCode,
+        string? twoFactorMethod,
         string? totpSecret,
         Func<IReadOnlyList<string>, Task<InteractiveTwoFactorAnswer>>? prompt,
         Action<string>? progress = null,
@@ -230,7 +236,10 @@ public static class VrchatAuthentication
         }
         else if (!string.IsNullOrWhiteSpace(twoFactorCode))
         {
-            method = PreferredMethod(methods);
+            method = twoFactorMethod ?? throw new VrchatApiException("The two-factor method was not specified.");
+            if (!methods.Contains(method, StringComparer.OrdinalIgnoreCase))
+                throw new VrchatApiException(
+                    "The requested two-factor method is unavailable. VRChat requested: " + string.Join(", ", methods));
             code = twoFactorCode;
         }
         else if (prompt != null)
@@ -251,13 +260,6 @@ public static class VrchatAuthentication
         return await api.CompleteLoginAsync(method, code, cancellationToken);
     }
 
-    private static string PreferredMethod(IReadOnlyList<string> methods)
-    {
-        if (methods.Contains("emailOtp", StringComparer.OrdinalIgnoreCase)) return "emailOtp";
-        if (methods.Contains("totp", StringComparer.OrdinalIgnoreCase)) return "totp";
-        if (methods.Contains("otp", StringComparer.OrdinalIgnoreCase)) return "otp";
-        throw new VrchatApiException("VRChat requested an unsupported two-factor method: " + string.Join(", ", methods));
-    }
 }
 
 public sealed class VrchatAuthenticationException(string message) : VrchatApiException(message);

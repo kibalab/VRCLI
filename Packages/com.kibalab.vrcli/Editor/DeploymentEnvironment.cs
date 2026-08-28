@@ -9,8 +9,10 @@ namespace KibaLab.WorldDeployment
         public const string Username = "VRCLI_USERNAME";
         public const string Password = "VRCLI_PASSWORD";
         public const string TwoFactorCode = "VRCLI_TWO_FACTOR_CODE";
+        public const string TwoFactorMethod = "VRCLI_TWO_FACTOR_METHOD";
         public const string TotpSecret = "VRCLI_TOTP_SECRET";
-        public const string TwoFactorPipe = "VRCLI_TWO_FACTOR_PIPE";
+        public const string AuthToken = "VRCLI_AUTH_TOKEN";
+        public const string TwoFactorToken = "VRCLI_TWO_FACTOR_TOKEN";
         public const string Platform = "VRCLI_PLATFORM";
         public const string ResultFile = "VRCLI_RESULT_FILE";
         public const string OwnershipAccepted = "VRCLI_ACCEPT_CONTENT_OWNERSHIP";

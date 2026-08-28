@@ -11,6 +11,8 @@ namespace KibaLab.WorldDeployment;
 
 public sealed record VrchatUser(string Id, string DisplayName);
 
+public sealed record VrchatSessionTokens(string AuthToken, string? TwoFactorToken);
+
 public sealed record VrchatLoginChallenge(
     VrchatUser? User,
     IReadOnlyList<string> RequiredTwoFactorMethods)
@@ -33,6 +35,8 @@ public sealed record MetadataChange(string Field, string Before, string After);
 
 public class VrchatApiException(string message) : Exception(message);
 
+public sealed class VrchatCredentialException(string message) : Exception(message);
+
 public sealed class VrchatApiClient : IDisposable
 {
     private static readonly Uri ApiRoot = new("https://api.vrchat.cloud/api/1/");
@@ -43,6 +47,7 @@ public sealed class VrchatApiClient : IDisposable
 
     private readonly HttpClient client;
     private readonly bool ownsClient;
+    private readonly CookieContainer? cookies;
 
     public VrchatUser? CurrentUser { get; private set; }
 
@@ -50,9 +55,10 @@ public sealed class VrchatApiClient : IDisposable
     {
         if (messageHandler == null)
         {
+            cookies = new CookieContainer();
             messageHandler = new HttpClientHandler
             {
-                CookieContainer = new CookieContainer(),
+                CookieContainer = cookies,
                 AutomaticDecompression = DecompressionMethods.All,
                 UseCookies = true,
                 UseProxy = false
@@ -67,6 +73,32 @@ public sealed class VrchatApiClient : IDisposable
         ownsClient = true;
         client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "VRC.Core.BestHTTP");
         client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+    }
+
+    public async Task<VrchatUser> ResumeSessionAsync(
+        VrchatSessionTokens session,
+        CancellationToken cancellationToken = default)
+    {
+        if (cookies == null)
+            throw new InvalidOperationException("Session import is unavailable with a custom HTTP handler.");
+        if (string.IsNullOrWhiteSpace(session.AuthToken))
+            throw new VrchatApiException("The saved VRChat session does not contain an authentication token.");
+
+        cookies.Add(ApiRoot, new Cookie("auth", session.AuthToken));
+        if (!string.IsNullOrWhiteSpace(session.TwoFactorToken))
+            cookies.Add(ApiRoot, new Cookie("twoFactorAuth", session.TwoFactorToken));
+        return await GetCurrentUserAsync(cancellationToken);
+    }
+
+    public VrchatSessionTokens ExportSession()
+    {
+        if (cookies == null)
+            throw new InvalidOperationException("Session export is unavailable with a custom HTTP handler.");
+        CookieCollection established = cookies.GetCookies(ApiRoot);
+        string? authToken = established["auth"]?.Value;
+        if (string.IsNullOrWhiteSpace(authToken))
+            throw new VrchatApiException("VRChat did not issue an authentication session.");
+        return new VrchatSessionTokens(authToken, established["twoFactorAuth"]?.Value);
     }
 
     public async Task<VrchatLoginChallenge> BeginLoginAsync(

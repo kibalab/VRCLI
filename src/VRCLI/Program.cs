@@ -45,7 +45,7 @@ internal static class Program
         {
             try
             {
-                wizard = InteractiveWizard.Run(args, cancellation.Token);
+                wizard = await InteractiveWizard.RunAsync(args, cancellation.Token);
             }
             catch (VrchatCredentialException exception)
             {

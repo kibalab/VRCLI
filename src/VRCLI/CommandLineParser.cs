@@ -31,6 +31,7 @@ public sealed class CommandLineParser
         "password",
         "platform",
         "two-factor-code",
+        "two-factor-method",
         "unity",
         "timeout",
         "config",
@@ -247,11 +248,14 @@ public sealed class CommandLineParser
         }
 
         string? password = Get(values, "password") ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.Password);
+        bool hasSavedSession = !string.IsNullOrWhiteSpace(
+            Environment.GetEnvironmentVariable(DeploymentEnvironment.AuthToken));
 
-        if (string.IsNullOrEmpty(password))
+        if (string.IsNullOrEmpty(password) && !hasSavedSession)
         {
             return ParseResult.Failure("Set VRCLI_PASSWORD or provide --password <password>.");
         }
+        password ??= string.Empty;
 
         if (!TryParseTimeout(Get(values, "timeout"), out TimeSpan timeout, out string? timeoutError))
         {
@@ -282,6 +286,9 @@ public sealed class CommandLineParser
         string? twoFactorCode = interactiveTwoFactor
             ? null
             : Get(values, "two-factor-code") ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorCode);
+        string? twoFactorMethod = interactiveTwoFactor
+            ? null
+            : Get(values, "two-factor-method") ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorMethod);
         string? totpSecret = interactiveTwoFactor || !string.IsNullOrWhiteSpace(twoFactorCode)
             ? null
             : Environment.GetEnvironmentVariable(DeploymentEnvironment.TotpSecret);
@@ -292,6 +299,15 @@ public sealed class CommandLineParser
         if (interactiveTwoFactor && values.ContainsKey("two-factor-code"))
         {
             return ParseResult.Failure("Use --interactive-two-factor by itself, without another two-factor option.");
+        }
+        if (!string.IsNullOrWhiteSpace(twoFactorCode) && !TryParseTwoFactorMethod(twoFactorMethod, out twoFactorMethod))
+        {
+            return ParseResult.Failure(
+                "--two-factor-code requires --two-factor-method <totp|emailOtp|otp> or VRCLI_TWO_FACTOR_METHOD.");
+        }
+        if (string.IsNullOrWhiteSpace(twoFactorCode) && !string.IsNullOrWhiteSpace(twoFactorMethod))
+        {
+            return ParseResult.Failure("--two-factor-method is only valid with --two-factor-code.");
         }
 
         DeployOptions options = new(
@@ -315,6 +331,7 @@ public sealed class CommandLineParser
             Get(values, "scene"),
             Get(values, "unity"),
             twoFactorCode,
+            twoFactorMethod,
             totpSecret,
             interactiveTwoFactor,
             timeout,
@@ -444,6 +461,18 @@ public sealed class CommandLineParser
                 platform = default;
                 return false;
         }
+    }
+
+    private static bool TryParseTwoFactorMethod(string? value, out string? method)
+    {
+        method = value?.Trim().ToLowerInvariant() switch
+        {
+            "totp" => "totp",
+            "emailotp" => "emailOtp",
+            "otp" => "otp",
+            _ => null
+        };
+        return method != null;
     }
 
     private static bool TryParseCapacity(

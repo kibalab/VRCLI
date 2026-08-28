@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.ComponentModel;
 
 namespace KibaLab.WorldDeployment;
 
@@ -18,37 +19,12 @@ public static class InteractiveMetadataEditor
         screen.SetRoute("ACCOUNT", "WORLD", "EDIT");
         screen.Enter();
         int savedUpdates = 0;
-        string password = string.Empty;
 
         try
         {
             screen.SetSection("01", "ACCOUNT", "Sign in once; this session is reused until you exit.");
-            string username = ReadRequired(
-                screen,
-                "VRChat username or account email",
-                Environment.GetEnvironmentVariable(DeploymentEnvironment.Username));
-            password = Environment.GetEnvironmentVariable(DeploymentEnvironment.Password) ??
-                       ReadRequired(screen, "VRChat password", secret: true);
-
-            using VrchatApiClient api = new();
-            screen.SetBusy("Signing in to VRChat…");
-            VrchatUser user;
-            try
-            {
-                user = await VrchatAuthentication.SignInAsync(
-                    api,
-                    username,
-                    password,
-                    null,
-                    Environment.GetEnvironmentVariable(DeploymentEnvironment.TotpSecret),
-                    methods => Task.FromResult(ReadTwoFactor(screen, methods)),
-                    screen.SetBusy,
-                    cancellationToken);
-            }
-            catch (VrchatApiException exception)
-            {
-                throw new VrchatAuthenticationException(exception.Message);
-            }
+            (VrchatApiClient signedInApi, VrchatUser user) = await OpenAccountSessionAsync(screen, cancellationToken);
+            using VrchatApiClient api = signedInApi;
             screen.AddSummary("Account", user.DisplayName + "  ·  " + user.Id);
 
             while (true)
@@ -89,7 +65,9 @@ public static class InteractiveMetadataEditor
             [
                 ("Account", user.DisplayName),
                 ("Updates", savedUpdates.ToString(CultureInfo.InvariantCulture)),
-                ("Session", "Signed out locally; credentials were not stored")
+                ("Session", OperatingSystem.IsWindows()
+                    ? "Saved in Windows Credential Manager"
+                    : "Kept only for this process")
             ]);
             await Task.Delay(500, cancellationToken);
             return ExitCodes.Success;
@@ -106,9 +84,130 @@ public static class InteractiveMetadataEditor
                 ? ExitCodes.AuthenticationFailed
                 : ExitCodes.UploadFailed;
         }
+    }
+
+    private static async Task<(VrchatApiClient Api, VrchatUser User)> OpenAccountSessionAsync(
+        WizardTerminalScreen screen,
+        CancellationToken cancellationToken)
+    {
+        VrchatSessionStore store = new();
+        IReadOnlyList<SavedVrchatSession> savedSessions;
+        try
+        {
+            savedSessions = store.List();
+        }
+        catch (Win32Exception exception)
+        {
+            savedSessions = [];
+            screen.SetNotice("Saved sessions could not be read · " + exception.Message);
+        }
+
+        while (savedSessions.Count > 0)
+        {
+            string[] choices = savedSessions
+                .Select(session => session.DisplayName + "  ·  saved session")
+                .Append("Sign in with another account")
+                .ToArray();
+            int selected = screen.ReadChoice("Choose a VRChat account", choices);
+            if (selected == savedSessions.Count) break;
+
+            SavedVrchatSession saved = savedSessions[selected];
+            VrchatApiClient api = new();
+            screen.SetBusy("Validating the saved session for " + saved.DisplayName + "…");
+            try
+            {
+                VrchatUser user = await api.ResumeSessionAsync(saved.Tokens, cancellationToken);
+                TrySaveSession(
+                    store,
+                    saved with
+                    {
+                        DisplayName = user.DisplayName,
+                        Tokens = api.ExportSession(),
+                        LastUsed = DateTimeOffset.UtcNow
+                    },
+                    screen);
+                return (api, user);
+            }
+            catch (VrchatApiException exception)
+            {
+                api.Dispose();
+                try
+                {
+                    store.Delete(saved.UserId);
+                }
+                catch (Win32Exception)
+                {
+                }
+                screen.SetNotice(saved.DisplayName + " session expired · " + exception.Message);
+                savedSessions = savedSessions.Where(session => session.UserId != saved.UserId).ToArray();
+            }
+            catch (HttpRequestException exception)
+            {
+                api.Dispose();
+                throw new VrchatAuthenticationException(
+                    "The saved session could not be checked: " + exception.Message);
+            }
+            catch
+            {
+                api.Dispose();
+                throw;
+            }
+        }
+
+        string username = ReadRequired(
+            screen,
+            "VRChat username or account email",
+            Environment.GetEnvironmentVariable(DeploymentEnvironment.Username));
+        string password = Environment.GetEnvironmentVariable(DeploymentEnvironment.Password) ??
+                          ReadRequired(screen, "VRChat password", secret: true);
+        VrchatApiClient signedIn = new();
+        try
+        {
+            screen.SetBusy("Signing in and verifying the account with VRChat…");
+            VrchatUser user = await VrchatAuthentication.SignInAsync(
+                signedIn,
+                username,
+                password,
+                null,
+                null,
+                Environment.GetEnvironmentVariable(DeploymentEnvironment.TotpSecret),
+                methods => Task.FromResult(ReadTwoFactor(screen, methods)),
+                screen.SetBusy,
+                cancellationToken);
+            TrySaveSession(
+                store,
+                new SavedVrchatSession(
+                    user.Id,
+                    user.DisplayName,
+                    username,
+                    signedIn.ExportSession(),
+                    DateTimeOffset.UtcNow),
+                screen);
+            return (signedIn, user);
+        }
+        catch (Exception exception) when (exception is VrchatApiException or HttpRequestException)
+        {
+            signedIn.Dispose();
+            throw new VrchatAuthenticationException(exception.Message);
+        }
         finally
         {
             password = string.Empty;
+        }
+    }
+
+    private static void TrySaveSession(
+        VrchatSessionStore store,
+        SavedVrchatSession session,
+        WizardTerminalScreen screen)
+    {
+        try
+        {
+            store.Save(session);
+        }
+        catch (Win32Exception exception)
+        {
+            screen.SetNotice("Signed in, but the session could not be saved · " + exception.Message);
         }
     }
 

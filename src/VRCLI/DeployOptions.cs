@@ -21,6 +21,7 @@ public sealed record DeployOptions(
     string? ScenePath,
     string? UnityPath,
     string? TwoFactorCode,
+    string? TwoFactorMethod,
     string? TotpSecret,
     bool InteractiveTwoFactor,
     TimeSpan Timeout,

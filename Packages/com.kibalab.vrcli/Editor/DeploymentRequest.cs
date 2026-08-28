@@ -20,7 +20,10 @@ namespace KibaLab.WorldDeployment.Editor
         public string Username { get; private set; }
         public string Password { get; private set; }
         public string TwoFactorCode { get; private set; }
+        public string TwoFactorMethod { get; private set; }
         public string TotpSecret { get; private set; }
+        public string AuthToken { get; private set; }
+        public string TwoFactorToken { get; private set; }
         public string Platform { get; private set; }
         public string ScenePath { get; private set; }
         public string ResultFile { get; private set; }
@@ -43,9 +46,12 @@ namespace KibaLab.WorldDeployment.Editor
                 BlueprintId = Environment.GetEnvironmentVariable(DeploymentEnvironment.BlueprintId) ?? string.Empty,
                 IsNew = ReadBoolean(DeploymentEnvironment.IsNew),
                 Username = Require(DeploymentEnvironment.Username),
-                Password = Require(DeploymentEnvironment.Password),
+                Password = Environment.GetEnvironmentVariable(DeploymentEnvironment.Password) ?? string.Empty,
                 TwoFactorCode = Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorCode),
+                TwoFactorMethod = Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorMethod),
                 TotpSecret = Environment.GetEnvironmentVariable(DeploymentEnvironment.TotpSecret),
+                AuthToken = Environment.GetEnvironmentVariable(DeploymentEnvironment.AuthToken),
+                TwoFactorToken = Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorToken),
                 Platform = Require(DeploymentEnvironment.Platform),
                 ResultFile = Require(DeploymentEnvironment.ResultFile),
                 ScenePath = Environment.GetEnvironmentVariable(DeploymentEnvironment.Scene),

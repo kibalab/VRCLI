@@ -24,28 +24,4 @@ public sealed class DeploymentApplicationTests
         Assert.Contains("Unknown option", error.ToString());
     }
 
-    [Fact]
-    public async Task JsonModeReturnsOneResultForInvalidProject()
-    {
-        string missingProject = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-        StringWriter output = new();
-        StringWriter error = new();
-        DeploymentApplication application = new(output, error);
-
-        int exitCode = await application.RunAsync(
-            [
-                "deploy",
-                "--json",
-                "--project", missingProject,
-                "--login", "example",
-                "--password", "example"
-            ],
-            CancellationToken.None);
-
-        Assert.Equal(ExitCodes.ProjectInvalid, exitCode);
-        using JsonDocument result = JsonDocument.Parse(output.ToString());
-        Assert.Equal("project", result.RootElement.GetProperty("Stage").GetString());
-        Assert.Equal(ExitCodes.ProjectInvalid, result.RootElement.GetProperty("ExitCode").GetInt32());
-        Assert.DoesNotContain(Branding.LogoText, output.ToString());
-    }
 }

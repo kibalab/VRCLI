@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.IO.Pipes;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -40,6 +38,7 @@ namespace KibaLab.WorldDeployment.Editor
             }
             DeploymentLog.Info("AUTH", "VRChat remote configuration is ready.");
 
+            if (await TryUseCliSessionAsync(request)) return;
             if (await TryResumeSdkSessionAsync(request)) return;
             DeploymentLog.Info("AUTH", "No valid matching SDK session was found; starting credential login.");
 
@@ -99,16 +98,16 @@ namespace KibaLab.WorldDeployment.Editor
                         methods = new[] { "totp" };
                         DeploymentLog.Info("AUTH", "Generated a time-based one-time code in memory; the value will not be logged.");
                     }
-
-                    if (string.IsNullOrWhiteSpace(twoFactorCode))
+                    else if (!string.IsNullOrWhiteSpace(twoFactorCode))
                     {
-                        InteractiveTwoFactorResponse interactive = RequestInteractiveTwoFactor(methods);
-                        if (interactive != null)
+                        if (string.IsNullOrWhiteSpace(request.TwoFactorMethod) ||
+                            !methods.Contains(request.TwoFactorMethod, StringComparer.OrdinalIgnoreCase))
                         {
-                            twoFactorCode = interactive.Code;
-                            methods = new[] { interactive.Method };
-                            DeploymentLog.Info("AUTH", "Received interactive verification input; the value will not be logged.");
+                            throw new LoginException(
+                                "The supplied two-factor code method is unavailable. VRChat requested: " +
+                                string.Join(", ", methods) + ".");
                         }
+                        methods = new[] { request.TwoFactorMethod };
                     }
 
                     if (string.IsNullOrWhiteSpace(twoFactorCode))
@@ -147,6 +146,51 @@ namespace KibaLab.WorldDeployment.Editor
             CompleteLogin(authenticated);
             DeploymentLog.Info("AUTH", "Saved the refreshed VRChat SDK session for future deployments.");
             LogAuthenticatedUser(authenticated, "credential login");
+        }
+
+        private static async Task<bool> TryUseCliSessionAsync(DeploymentRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.AuthToken)) return false;
+            DeploymentLog.Info("AUTH", "Using the VRCLI session verified before Unity startup.");
+            try
+            {
+                CookieContainer cookies = new CookieContainer();
+                cookies.Add(ApiRoot, new Cookie("auth", request.AuthToken));
+                if (!string.IsNullOrWhiteSpace(request.TwoFactorToken))
+                    cookies.Add(ApiRoot, new Cookie("twoFactorAuth", request.TwoFactorToken));
+
+                using (HttpClientHandler handler = new HttpClientHandler
+                {
+                    CookieContainer = cookies,
+                    UseProxy = false
+                })
+                using (HttpClient client = new HttpClient(handler))
+                {
+                    client.Timeout = TimeSpan.FromMinutes(2);
+                    AddSdkHeaders(client);
+                    string currentUserJson = await GetCurrentUserAsync(client);
+                    if (ReadTwoFactorMethods(currentUserJson).Length > 0)
+                        throw new LoginException("The pre-verified VRCLI session still requires two-factor authentication.");
+                    APIUser user = CreateCurrentUser(currentUserJson);
+                    if (string.IsNullOrWhiteSpace(request.TwoFactorToken))
+                        ApiCredentials.Set(user.displayName, user.displayName, "vrchat", request.AuthToken);
+                    else
+                        ApiCredentials.Set(
+                            user.displayName,
+                            user.displayName,
+                            "vrchat",
+                            request.AuthToken,
+                            request.TwoFactorToken);
+                    CompleteLogin(user);
+                    LogAuthenticatedUser(user, "pre-verified VRCLI session");
+                    return true;
+                }
+            }
+            catch (LoginException)
+            {
+                DeploymentLog.Info("AUTH", "The pre-verified VRCLI session is no longer valid.");
+                return false;
+            }
         }
 
         private static async Task<bool> TryResumeSdkSessionAsync(DeploymentRequest request)
@@ -280,53 +324,6 @@ namespace KibaLab.WorldDeployment.Editor
             }
         }
 
-        private static InteractiveTwoFactorResponse RequestInteractiveTwoFactor(string[] methods)
-        {
-            string pipeName = Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorPipe);
-            if (string.IsNullOrWhiteSpace(pipeName)) return null;
-
-            DeploymentLog.Info("AUTH", "Waiting for an interactive two-factor response.");
-            try
-            {
-                using (NamedPipeClientStream pipe = new NamedPipeClientStream(
-                    ".",
-                    pipeName,
-                    PipeDirection.InOut,
-                    PipeOptions.None))
-                {
-                    pipe.Connect(30000);
-                    using (StreamReader reader = new StreamReader(pipe, Encoding.UTF8, false, 1024, true))
-                    using (StreamWriter writer = new StreamWriter(pipe, new UTF8Encoding(false), 1024, true))
-                    {
-                        writer.AutoFlush = true;
-                        writer.WriteLine(JsonConvert.SerializeObject(new InteractiveTwoFactorRequest
-                        {
-                            Methods = methods
-                        }));
-                        string responseJson = reader.ReadLine();
-                        InteractiveTwoFactorResponse response = string.IsNullOrWhiteSpace(responseJson)
-                            ? null
-                            : JsonConvert.DeserializeObject<InteractiveTwoFactorResponse>(responseJson);
-                        if (response == null || string.IsNullOrWhiteSpace(response.Code) ||
-                            !methods.Contains(response.Method, StringComparer.OrdinalIgnoreCase))
-                        {
-                            throw new LoginException("Interactive two-factor authentication was cancelled or invalid.");
-                        }
-                        return response;
-                    }
-                }
-            }
-            catch (IOException exception)
-            {
-                throw new LoginException(
-                    "Unable to communicate with the interactive two-factor prompt: " + exception.Message);
-            }
-            catch (TimeoutException)
-            {
-                throw new LoginException("Timed out while opening the interactive two-factor prompt.");
-            }
-        }
-
         private static string ReadApiError(string body, HttpStatusCode statusCode)
         {
             try
@@ -394,16 +391,6 @@ namespace KibaLab.WorldDeployment.Editor
             await task;
         }
 
-        private sealed class InteractiveTwoFactorRequest
-        {
-            public string[] Methods;
-        }
-
-        private sealed class InteractiveTwoFactorResponse
-        {
-            public string Method;
-            public string Code;
-        }
 
     }
 }

@@ -80,11 +80,11 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         stageOrder = operation switch
         {
             OperationMode.Meta =>
-            ["BOOT", "AUTH", "CONTEXT", "WORLD", "UPLOAD"],
+            ["AUTH", "BOOT", "CONTEXT", "WORLD", "UPLOAD"],
             OperationMode.Check =>
-            ["BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "AUTH", "CONTEXT", "PREPARE", "WORLD", "SDK", "CHECK"],
+            ["AUTH", "BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "CONTEXT", "PREPARE", "WORLD", "SDK", "CHECK"],
             _ =>
-            ["BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "AUTH", "CONTEXT", "PREPARE", "WORLD", "SDK", "OWNERSHIP", "BUILD", "SIGNATURE", "UPLOAD"]
+            ["AUTH", "BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "CONTEXT", "PREPARE", "WORLD", "SDK", "OWNERSHIP", "BUILD", "SIGNATURE", "UPLOAD"]
         };
         stageNames = AllStageNames;
         stages = stageOrder.ToDictionary(stage => stage, _ => StageState.Pending, StringComparer.Ordinal);

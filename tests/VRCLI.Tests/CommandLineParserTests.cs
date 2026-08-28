@@ -401,16 +401,75 @@ public sealed class CommandLineParserTests
                 "--login", "kibalab",
                 "--password", "1234",
                 "--platform", "Android",
-                "--two-factor-code", "123456"
+                "--two-factor-code", "123456",
+                "--two-factor-method", "totp"
             });
 
             Assert.Null(result.Error);
             Assert.Equal("123456", result.Options?.TwoFactorCode);
+            Assert.Equal("totp", result.Options?.TwoFactorMethod);
             Assert.Null(result.Options?.TotpSecret);
         }
         finally
         {
             Environment.SetEnvironmentVariable("VRCLI_TOTP_SECRET", null);
+        }
+    }
+
+    [Fact]
+    public void CurrentCodeRequiresAnExplicitMethod()
+    {
+        ParseResult result = new CommandLineParser().Parse(new[]
+        {
+            "deploy",
+            "--project", ".",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--two-factor-code", "123456"
+        });
+
+        Assert.Contains("--two-factor-method", result.Error);
+    }
+
+    [Theory]
+    [InlineData("totp", "totp")]
+    [InlineData("emailOtp", "emailOtp")]
+    [InlineData("otp", "otp")]
+    public void ParsesExplicitTwoFactorMethod(string supplied, string expected)
+    {
+        ParseResult result = new CommandLineParser().Parse(new[]
+        {
+            "deploy",
+            "--project", ".",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--two-factor-code", "123456",
+            "--two-factor-method", supplied
+        });
+
+        Assert.Null(result.Error);
+        Assert.Equal(expected, result.Options?.TwoFactorMethod);
+    }
+
+    [Fact]
+    public void SavedSessionDoesNotRequireAPassword()
+    {
+        Environment.SetEnvironmentVariable("VRCLI_AUTH_TOKEN", "saved-token");
+        try
+        {
+            ParseResult result = new CommandLineParser().Parse(new[]
+            {
+                "deploy",
+                "--project", ".",
+                "--login", "kibalab"
+            });
+
+            Assert.Null(result.Error);
+            Assert.Equal(string.Empty, result.Options?.Password);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("VRCLI_AUTH_TOKEN", null);
         }
     }
 

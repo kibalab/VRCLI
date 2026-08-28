@@ -38,12 +38,6 @@ public sealed class DeploymentApplication(
         DeployOptions options = parsed.Options!;
         bool useTerminalUi = TerminalProgressRenderer.ShouldUse(options.TerminalMode, options.Verbose);
         if (!useTerminalUi && !jsonOutput) await Branding.WriteAsync(output);
-        if (options.ThumbnailPath != null && !File.Exists(options.ThumbnailPath))
-        {
-            string message = $"Thumbnail was not found: {options.ThumbnailPath}";
-            await error.WriteLineAsync("VRCLI: " + message);
-            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", message, options);
-        }
 
         if (options.Operation == OperationMode.Meta)
         {
@@ -51,24 +45,6 @@ public sealed class DeploymentApplication(
                 .RunAsync(options, cancellationToken);
             LastResult = metadata.Result;
             return metadata.ExitCode;
-        }
-
-        ProjectInspectionResult project = ProjectInspector.Inspect(
-            options.ProjectPath,
-            options.ScenePath,
-            requireScene: true);
-        if (!project.IsValid)
-        {
-            await error.WriteLineAsync("VRCLI: " + project.Error);
-            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", project.Error!, options);
-        }
-
-        string? unityPath = UnityLocator.Find(project.UnityVersion!, options.UnityPath);
-        if (unityPath == null)
-        {
-            string message = $"Unity {project.UnityVersion} was not found. Use --unity or UNITY_EDITOR_PATH.";
-            await error.WriteLineAsync("VRCLI: " + message);
-            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", message, options);
         }
 
         ConcurrentBag<string> secrets = new(
@@ -90,8 +66,8 @@ public sealed class DeploymentApplication(
             terminalUi.SetOverview(
                 projectName,
                 targetName,
-                options.Operation == OperationMode.Meta ? "Not required" : project.ScenePath ?? "First enabled build scene",
-                options.Operation == OperationMode.Meta ? "Not applicable" : options.Platform.ToString());
+                options.ScenePath ?? "Auto-detect after sign-in",
+                options.Platform.ToString());
         }
         if (options.InteractiveTwoFactor && (terminalUi == null || Console.IsInputRedirected))
         {
@@ -108,6 +84,67 @@ public sealed class DeploymentApplication(
         {
             terminalUi.Start();
         }
+
+        VrchatUser authenticatedUser;
+        VrchatSessionTokens sessionTokens;
+        try
+        {
+            (authenticatedUser, sessionTokens) = await AuthenticateAsync(options, terminalUi, cancellationToken);
+            secrets.Add(sessionTokens.AuthToken);
+            secrets.Add(sessionTokens.TwoFactorToken ?? string.Empty);
+        }
+        catch (OperationCanceledException)
+        {
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            await error.WriteLineAsync("VRCLI: Cancelled.");
+            return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Authentication cancelled.", options);
+        }
+        catch (Exception exception) when (exception is VrchatApiException or HttpRequestException or TaskCanceledException)
+        {
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            await error.WriteLineAsync("VRCLI: " + exception.Message);
+            return await WriteFailureAsync(ExitCodes.AuthenticationFailed, "authentication", exception.Message, options);
+        }
+
+        await ReportAsync(
+            terminalUi,
+            "AUTH",
+            $"Signed in as {authenticatedUser.DisplayName} ({authenticatedUser.Id}).");
+
+        if (options.ThumbnailPath != null && !File.Exists(options.ThumbnailPath))
+        {
+            string message = $"Thumbnail was not found: {options.ThumbnailPath}";
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            await error.WriteLineAsync("VRCLI: " + message);
+            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", message, options);
+        }
+
+        ProjectInspectionResult project = ProjectInspector.Inspect(
+            options.ProjectPath,
+            options.ScenePath,
+            requireScene: true);
+        if (!project.IsValid)
+        {
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            await error.WriteLineAsync("VRCLI: " + project.Error);
+            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", project.Error!, options);
+        }
+
+        string? unityPath = UnityLocator.Find(project.UnityVersion!, options.UnityPath);
+        if (unityPath == null)
+        {
+            string message = $"Unity {project.UnityVersion} was not found. Use --unity or UNITY_EDITOR_PATH.";
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            await error.WriteLineAsync("VRCLI: " + message);
+            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", message, options);
+        }
+
+        terminalUi?.SetOverview(
+            Path.GetFileName(options.ProjectPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+            options.IsNew ? "New world · " + options.Title :
+            string.IsNullOrWhiteSpace(options.BlueprintId) ? "Scene Blueprint" : options.BlueprintId,
+            project.ScenePath ?? "First enabled build scene",
+            options.Platform.ToString());
         await ReportAsync(terminalUi, "BOOT", options.Operation + " request validated; preparing dependencies and Unity bridge.", true);
 
         if (!options.SkipVpmResolve)
@@ -159,29 +196,20 @@ public sealed class DeploymentApplication(
         }
 
         string resultFile = Path.Combine(Path.GetTempPath(), $"vrcli-result-{Guid.NewGuid():N}.json");
-        InteractiveTwoFactorServer? twoFactorServer = null;
-        CancellationTokenSource? twoFactorCancellation = null;
-        Task? twoFactorTask = null;
         try
         {
             await ReportAsync(
                 terminalUi,
                 "UNITY",
-                "Launching Unity and compiling project scripts. Authentication follows compilation.",
+                "Launching Unity with the pre-verified VRChat session and compiling project scripts.",
                 true);
-            if (options.InteractiveTwoFactor && terminalUi != null)
-            {
-                twoFactorServer = new InteractiveTwoFactorServer(terminalUi, secrets);
-                twoFactorCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                twoFactorTask = twoFactorServer.RunAsync(twoFactorCancellation.Token);
-            }
 
             ProcessStartInfo unity = CreateUnityStartInfo(
                 unityPath,
                 options,
                 project.ScenePath,
                 resultFile,
-                twoFactorServer?.PipeName);
+                sessionTokens);
             CompilerDiagnosticCollector? compilerDiagnostics = options.Operation == OperationMode.Check
                 ? new CompilerDiagnosticCollector(terminalUi)
                 : null;
@@ -292,24 +320,43 @@ public sealed class DeploymentApplication(
         }
         finally
         {
-            if (twoFactorCancellation != null)
-            {
-                await twoFactorCancellation.CancelAsync();
-                twoFactorCancellation.Dispose();
-            }
-            if (twoFactorServer != null) await twoFactorServer.DisposeAsync();
-            if (twoFactorTask != null)
-            {
-                try
-                {
-                    await twoFactorTask;
-                }
-                catch (OperationCanceledException)
-                {
-                }
-            }
             if (File.Exists(resultFile)) File.Delete(resultFile);
         }
+    }
+
+    private async Task<(VrchatUser User, VrchatSessionTokens Tokens)> AuthenticateAsync(
+        DeployOptions options,
+        TerminalProgressRenderer? terminalUi,
+        CancellationToken cancellationToken)
+    {
+        using VrchatApiClient api = new();
+        string? authToken = Environment.GetEnvironmentVariable(DeploymentEnvironment.AuthToken);
+        string? twoFactorToken = Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorToken);
+        VrchatUser user;
+        if (!string.IsNullOrWhiteSpace(authToken))
+        {
+            await ReportAsync(terminalUi, "AUTH", "Validating the selected saved session with VRChat.", true);
+            user = await api.ResumeSessionAsync(
+                new VrchatSessionTokens(authToken, twoFactorToken),
+                cancellationToken);
+        }
+        else
+        {
+            await ReportAsync(terminalUi, "AUTH", "Validating account credentials with VRChat.", true);
+            user = await VrchatAuthentication.SignInAsync(
+                api,
+                options.Username,
+                options.Password,
+                options.TwoFactorCode,
+                options.TwoFactorMethod,
+                options.TotpSecret,
+                options.InteractiveTwoFactor && terminalUi != null
+                    ? methods => Task.FromResult(terminalUi.PromptForTwoFactor(methods))
+                    : null,
+                message => Report(terminalUi, "AUTH", message),
+                cancellationToken);
+        }
+        return (user, api.ExportSession());
     }
 
     private async Task<int> ResolveVpmAsync(
@@ -353,7 +400,7 @@ public sealed class DeploymentApplication(
         DeployOptions options,
         string? scenePath,
         string resultFile,
-        string? twoFactorPipe)
+        VrchatSessionTokens sessionTokens)
     {
         ProcessStartInfo startInfo = new(unityPath) { WorkingDirectory = options.ProjectPath };
         Add(startInfo, "-batchmode");
@@ -370,10 +417,13 @@ public sealed class DeploymentApplication(
         startInfo.Environment[DeploymentEnvironment.Password] = options.Password;
         if (!string.IsNullOrWhiteSpace(options.TwoFactorCode))
             startInfo.Environment[DeploymentEnvironment.TwoFactorCode] = options.TwoFactorCode;
+        if (!string.IsNullOrWhiteSpace(options.TwoFactorMethod))
+            startInfo.Environment[DeploymentEnvironment.TwoFactorMethod] = options.TwoFactorMethod;
         if (!string.IsNullOrWhiteSpace(options.TotpSecret))
             startInfo.Environment[DeploymentEnvironment.TotpSecret] = options.TotpSecret;
-        if (!string.IsNullOrWhiteSpace(twoFactorPipe))
-            startInfo.Environment[DeploymentEnvironment.TwoFactorPipe] = twoFactorPipe;
+        startInfo.Environment[DeploymentEnvironment.AuthToken] = sessionTokens.AuthToken;
+        if (!string.IsNullOrWhiteSpace(sessionTokens.TwoFactorToken))
+            startInfo.Environment[DeploymentEnvironment.TwoFactorToken] = sessionTokens.TwoFactorToken;
         startInfo.Environment[DeploymentEnvironment.Platform] = options.Platform.ToString();
         startInfo.Environment[DeploymentEnvironment.ResultFile] = resultFile;
         startInfo.Environment[DeploymentEnvironment.OwnershipAccepted] = options.OwnershipAccepted ? "true" : "false";
@@ -414,6 +464,12 @@ public sealed class DeploymentApplication(
         }
 
         return LogOutput.WriteLineAsync($"[VRCLI][{area}] {message}");
+    }
+
+    private void Report(TerminalProgressRenderer? terminalUi, string area, string message)
+    {
+        if (terminalUi != null) terminalUi.Report(area, message);
+        else LogOutput.WriteLine($"[VRCLI][{area}] {message}");
     }
 
     private async Task<int> WriteFailureAsync(
@@ -471,6 +527,7 @@ VRCLI commands and parameters
   --tag <tag>                   Repeatable metadata tag; merged into existing tags
   --blueprint-output <file>     Save a newly generated wrld_ ID; deploy only
   --two-factor-code <code>      Current VRChat two-factor code
+  --two-factor-method <method>  Code type: totp, emailOtp, or otp
   --interactive-two-factor      Prompt only when VRChat requests two-factor authentication
   --config <file>               Configuration file; default ./vrcli.json when present
   --plain                       Append-only output for scripts and CI

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.ComponentModel;
 using System.Text;
 
 namespace KibaLab.WorldDeployment;
@@ -8,6 +9,8 @@ public sealed record InteractiveWizardResult(
     IReadOnlyDictionary<string, string> TemporarySecrets);
 
 public sealed record InteractiveTwoFactorAnswer(string Method, string Code);
+
+internal sealed record InteractiveAccount(VrchatUser User, string LoginHint, string Description);
 
 public static class InteractiveWizard
 {
@@ -25,7 +28,9 @@ public static class InteractiveWizard
         return !ciVariables.Any(name => IsTruthy(Environment.GetEnvironmentVariable(name)));
     }
 
-    public static InteractiveWizardResult? Run(string[] invocation, CancellationToken cancellationToken = default)
+    public static async Task<InteractiveWizardResult?> RunAsync(
+        string[] invocation,
+        CancellationToken cancellationToken = default)
     {
         using WizardTerminalScreen screen = new(cancellationToken);
         activeScreen = screen;
@@ -43,57 +48,21 @@ public static class InteractiveWizard
             WriteHeader();
 
             WriteSection("01", "ACCOUNT", "Verify the VRChat account before configuring the operation.");
-            string username = PromptRequired(
-                "VRChat username or account email",
-                Environment.GetEnvironmentVariable(DeploymentEnvironment.Username));
             Dictionary<string, string> temporarySecrets = new(StringComparer.Ordinal);
-            string password;
-            string? configuredPassword = Environment.GetEnvironmentVariable(DeploymentEnvironment.Password);
-            if (string.IsNullOrEmpty(configuredPassword))
-            {
-                password = PromptSecret("VRChat password", required: true)!;
-                temporarySecrets[DeploymentEnvironment.Password] = password;
-            }
-            else
-            {
-                password = configuredPassword;
-            }
-
-            activeScreen?.SetBusy("Validating username/email and password with VRChat…");
-            VrchatCredentialValidationResult credentialValidation;
-            try
-            {
-                credentialValidation = VrchatCredentialValidator.ValidateAsync(
-                        username,
-                        password,
-                        cancellationToken: cancellationToken)
-                    .GetAwaiter()
-                    .GetResult();
-            }
-            catch (VrchatCredentialException)
-            {
-                throw;
-            }
-            string accountName = credentialValidation.DisplayName ?? username;
-            string validationMessage = credentialValidation.IsFullyAuthenticated
-                ? "Account verified  " + accountName
-                : "Password accepted  · identity will be verified during sign-in";
-            if (activeScreen != null)
-                activeScreen.AddSummary("Account", validationMessage);
-            else
-                Console.WriteLine("  │  " + Paint("✓", "32;1") + " " + validationMessage);
-
-            bool hasTotpSecret = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(DeploymentEnvironment.TotpSecret));
-            string authenticationDescription = hasTotpSecret
-                ? "saved session → automatic TOTP only if requested"
-                : "saved session → ask only if VRChat requests verification";
+            InteractiveAccount account = await AuthenticateInteractiveAsync(
+                screen,
+                temporarySecrets,
+                cancellationToken);
+            string username = account.LoginHint;
+            string authenticationDescription = account.Description;
+            activeScreen?.AddSummary("Account", "Verified  " + account.User.DisplayName);
 
             return operation switch
             {
                 OperationMode.Check => RunCheckWizard(
-                    screen, username, authenticationDescription, hasTotpSecret, temporarySecrets),
+                    screen, username, authenticationDescription, temporarySecrets),
                 _ => RunDeploymentWizard(
-                    screen, username, authenticationDescription, hasTotpSecret, temporarySecrets)
+                    screen, username, authenticationDescription, temporarySecrets)
             };
         }
         catch (OperationCanceledException)
@@ -119,11 +88,140 @@ public static class InteractiveWizard
         };
     }
 
+    private static async Task<InteractiveAccount> AuthenticateInteractiveAsync(
+        WizardTerminalScreen screen,
+        Dictionary<string, string> temporarySecrets,
+        CancellationToken cancellationToken)
+    {
+        VrchatSessionStore store = new();
+        IReadOnlyList<SavedVrchatSession> savedSessions;
+        try
+        {
+            savedSessions = store.List();
+        }
+        catch (Win32Exception exception)
+        {
+            savedSessions = [];
+            screen.SetNotice("Saved sessions could not be read · " + exception.Message);
+        }
+
+        while (savedSessions.Count > 0)
+        {
+            string[] choices = savedSessions
+                .Select(session => session.DisplayName + "  ·  saved session")
+                .Append("Sign in with another account")
+                .ToArray();
+            int selected = screen.ReadChoice("Choose a VRChat account", choices);
+            if (selected == savedSessions.Count) break;
+
+            SavedVrchatSession saved = savedSessions[selected];
+            screen.SetBusy("Validating the saved session for " + saved.DisplayName + "…");
+            try
+            {
+                using VrchatApiClient api = new();
+                VrchatUser user = await api.ResumeSessionAsync(saved.Tokens, cancellationToken);
+                VrchatSessionTokens refreshed = api.ExportSession();
+                SaveSession(store, saved with
+                {
+                    DisplayName = user.DisplayName,
+                    Tokens = refreshed,
+                    LastUsed = DateTimeOffset.UtcNow
+                }, screen);
+                AddSessionSecrets(temporarySecrets, refreshed);
+                return new InteractiveAccount(user, saved.LoginHint, "Saved session · " + user.DisplayName);
+            }
+            catch (VrchatApiException exception)
+            {
+                try
+                {
+                    store.Delete(saved.UserId);
+                }
+                catch (Win32Exception)
+                {
+                }
+                screen.SetNotice(saved.DisplayName + " session expired · " + exception.Message);
+                savedSessions = savedSessions.Where(session => session.UserId != saved.UserId).ToArray();
+            }
+            catch (HttpRequestException exception)
+            {
+                throw new VrchatCredentialException("The saved session could not be checked: " + exception.Message);
+            }
+        }
+
+        string username = PromptRequired(
+            "VRChat username or account email",
+            Environment.GetEnvironmentVariable(DeploymentEnvironment.Username));
+        string password = Environment.GetEnvironmentVariable(DeploymentEnvironment.Password) ??
+                          PromptSecret("VRChat password", required: true)!;
+        screen.SetBusy("Signing in and verifying the account with VRChat…");
+        try
+        {
+            using VrchatApiClient api = new();
+            VrchatUser user = await VrchatAuthentication.SignInAsync(
+                api,
+                username,
+                password,
+                null,
+                null,
+                Environment.GetEnvironmentVariable(DeploymentEnvironment.TotpSecret),
+                methods => Task.FromResult(PromptForTwoFactorChallenge(methods)),
+                screen.SetBusy,
+                cancellationToken);
+            VrchatSessionTokens tokens = api.ExportSession();
+            AddSessionSecrets(temporarySecrets, tokens);
+            SaveSession(
+                store,
+                new SavedVrchatSession(
+                    user.Id,
+                    user.DisplayName,
+                    username,
+                    tokens,
+                    DateTimeOffset.UtcNow),
+                screen);
+            return new InteractiveAccount(user, username, "Signed in now · " + user.DisplayName);
+        }
+        catch (VrchatApiException exception)
+        {
+            throw new VrchatCredentialException(exception.Message);
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new VrchatCredentialException("VRChat sign-in could not be completed: " + exception.Message);
+        }
+        finally
+        {
+            password = string.Empty;
+        }
+    }
+
+    private static void AddSessionSecrets(
+        IDictionary<string, string> temporarySecrets,
+        VrchatSessionTokens tokens)
+    {
+        temporarySecrets[DeploymentEnvironment.AuthToken] = tokens.AuthToken;
+        if (!string.IsNullOrWhiteSpace(tokens.TwoFactorToken))
+            temporarySecrets[DeploymentEnvironment.TwoFactorToken] = tokens.TwoFactorToken;
+    }
+
+    private static void SaveSession(
+        VrchatSessionStore store,
+        SavedVrchatSession session,
+        WizardTerminalScreen screen)
+    {
+        try
+        {
+            store.Save(session);
+        }
+        catch (Win32Exception exception)
+        {
+            screen.SetNotice("Signed in, but the session could not be saved · " + exception.Message);
+        }
+    }
+
     private static InteractiveWizardResult? RunDeploymentWizard(
         WizardTerminalScreen screen,
         string username,
         string authenticationDescription,
-        bool hasTotpSecret,
         Dictionary<string, string> temporarySecrets)
     {
         while (true)
@@ -138,7 +236,7 @@ public static class InteractiveWizard
             int platform = PromptChoice("Target platform", ["StandaloneWindows64", "Android (Quest)"]);
             activeScreen?.AddSummary("Platform", platform == 0 ? "StandaloneWindows64" : "Android (Quest)");
 
-            List<string> arguments = CreateArguments("deploy", username, hasTotpSecret);
+            List<string> arguments = CreateArguments("deploy", username);
             Add(arguments, "--project", projectPath);
             Add(arguments, "--platform", platform == 0 ? "StandaloneWindows64" : "Android");
             Add(arguments, "--scene", scene);
@@ -204,7 +302,6 @@ public static class InteractiveWizard
         WizardTerminalScreen screen,
         string username,
         string authenticationDescription,
-        bool hasTotpSecret,
         Dictionary<string, string> temporarySecrets)
     {
         WriteSection("02", "PREFLIGHT", "Choose the project, scene, and platform to inspect without uploading.");
@@ -219,7 +316,7 @@ public static class InteractiveWizard
         string blueprint = PromptOptionalBlueprint();
         activeScreen?.AddSummary("Target", string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint);
 
-        List<string> arguments = CreateArguments("check", username, hasTotpSecret);
+        List<string> arguments = CreateArguments("check", username);
         Add(arguments, "--project", projectPath);
         Add(arguments, "--scene", scene);
         Add(arguments, "--platform", platformName);
@@ -536,11 +633,10 @@ public static class InteractiveWizard
         arguments.Add(value);
     }
 
-    private static List<string> CreateArguments(string command, string username, bool hasTotpSecret)
+    private static List<string> CreateArguments(string command, string username)
     {
         List<string> arguments = [command, "--tui"];
         Add(arguments, "--login", username);
-        if (!hasTotpSecret) arguments.Add("--interactive-two-factor");
         return arguments;
     }
 
