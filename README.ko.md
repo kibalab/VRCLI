@@ -66,7 +66,7 @@ vrcli check
 - `meta`: Unity를 열지 않고 기존 메타데이터를 수정하며 로그인 세션을 유지합니다.
 - `check`: 빌드나 업로드 없이 컴파일 및 SDK 업로드 문제를 보고합니다.
 
-TUI에서 프로젝트, 씬, 계정과 필요한 인증 코드를 입력할 수 있습니다.
+TUI에서 프로젝트, 씬, 계정과 필요한 인증 코드를 입력할 수 있습니다. Windows에서는 인증된 세션을 Windows 자격 증명 관리자에 저장하며, 다음 실행부터 저장된 계정을 선택하거나 새 계정으로 로그인할 수 있습니다.
 
 ## CI 또는 스크립트에서 사용
 
@@ -89,7 +89,7 @@ vrcli deploy `
   --interactive-two-factor
 ```
 
-일회용 인증 코드는 `--two-factor-code <현재-코드>`로 입력합니다. 명령행 비밀번호는 셸 기록이나 프로세스 목록에 남을 수 있으므로 CI에서는 환경변수가 더 안전합니다.
+일회용 인증 코드는 `--two-factor-code <현재-코드>`와 함께 `--two-factor-method totp`, `emailOtp` 또는 `otp`를 지정합니다. 명령행 비밀번호는 셸 기록이나 프로세스 목록에 남을 수 있으므로 CI에서는 환경변수가 더 안전합니다.
 
 ### 기존 월드 배포
 
@@ -128,10 +128,11 @@ vrcli meta --blueprint "wrld_..." `
   --title "새 이름" `
   --capacity 48 `
   --recommended-capacity 24 `
+  --remove-tag "author_tag_old" `
   --plain
 ```
 
-입력한 필드만 변경하며 Unity는 실행되지 않습니다.
+입력한 필드만 변경하며 Unity는 실행되지 않습니다. 이미 동일한 상태라면 서버 요청 없이 성공으로 종료합니다.
 
 ### 업로드 전 검사
 
@@ -168,14 +169,14 @@ jobs:
           --project .
           --scene Assets/Scenes/Main.unity
           --platform ${{ matrix.platform }}
-          --yes --plain
+          --yes --json
 ```
 
 각 러너에는 Unity, VRCLI, VPM CLI, 대상 플랫폼 모듈과 유효한 Unity 라이선스가 필요합니다. 두 작업을 동시에 실행하려면 사용 가능한 러너가 두 대 필요합니다.
 
 ## 결과
 
-비대화형 명령은 CI에서 읽을 수 있는 JSON으로 종료됩니다.
+`--json`을 사용하면 stdout에는 결과 객체 하나만 출력되고 진단 로그는 stderr로 분리됩니다.
 
 ```json
 {

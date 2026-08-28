@@ -66,7 +66,7 @@ vrcli check
 - `meta` edits existing metadata without opening Unity and keeps the login session open.
 - `check` reports compilation and SDK upload blockers without building or uploading.
 
-The TUI asks for the project, scene, account, and any missing verification code.
+The TUI asks for the project, scene, account, and any missing verification code. On Windows, verified sessions are stored in Windows Credential Manager; later runs let you choose a saved account or sign in with another one.
 
 ## Use it in CI or scripts
 
@@ -89,7 +89,7 @@ vrcli deploy `
   --interactive-two-factor
 ```
 
-Use `--two-factor-code <current-code>` for a one-time code. Command-line passwords may remain in shell history or process listings, so environment variables are safer for CI.
+Use `--two-factor-code <current-code>` together with `--two-factor-method totp`, `emailOtp`, or `otp`. Command-line passwords may remain in shell history or process listings, so environment variables are safer for CI.
 
 ### Deploy an existing world
 
@@ -128,10 +128,11 @@ vrcli meta --blueprint "wrld_..." `
   --title "New title" `
   --capacity 48 `
   --recommended-capacity 24 `
+  --remove-tag "author_tag_old" `
   --plain
 ```
 
-Only supplied fields are changed. Unity is not started.
+Only supplied fields are changed. Unity is not started, and an already up-to-date world exits successfully without sending an update.
 
 ### Check before uploading
 
@@ -168,14 +169,14 @@ jobs:
           --project .
           --scene Assets/Scenes/Main.unity
           --platform ${{ matrix.platform }}
-          --yes --plain
+          --yes --json
 ```
 
 Each runner needs Unity, VRCLI, VPM CLI, the target platform module, and a valid Unity license. Two simultaneous jobs require two available runners.
 
 ## Result
 
-Non-interactive commands finish with JSON that can be read by CI:
+Use `--json` to write exactly one result object to stdout while diagnostics go to stderr:
 
 ```json
 {

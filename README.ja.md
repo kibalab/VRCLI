@@ -66,7 +66,7 @@ vrcli check
 - `meta`: Unity を開かずに既存のメタデータを編集し、ログインセッションを維持します。
 - `check`: ビルドやアップロードを行わず、コンパイルと SDK アップロードの問題を報告します。
 
-TUI でプロジェクト、シーン、アカウント、必要な認証コードを入力できます。
+TUI でプロジェクト、シーン、アカウント、必要な認証コードを入力できます。Windows では認証済みセッションを Windows 資格情報マネージャーに保存し、次回から保存済みアカウントまたは新しいアカウントを選択できます。
 
 ## CI またはスクリプトで使う
 
@@ -89,7 +89,7 @@ vrcli deploy `
   --interactive-two-factor
 ```
 
-ワンタイムコードは `--two-factor-code <現在のコード>` で指定します。コマンドラインのパスワードはシェル履歴やプロセス一覧に残る可能性があるため、CI では環境変数の方が安全です。
+ワンタイムコードは `--two-factor-code <現在のコード>` とともに `--two-factor-method totp`、`emailOtp`、または `otp` を指定します。コマンドラインのパスワードはシェル履歴やプロセス一覧に残る可能性があるため、CI では環境変数の方が安全です。
 
 ### 既存ワールドをデプロイ
 
@@ -128,10 +128,11 @@ vrcli meta --blueprint "wrld_..." `
   --title "新しいタイトル" `
   --capacity 48 `
   --recommended-capacity 24 `
+  --remove-tag "author_tag_old" `
   --plain
 ```
 
-指定したフィールドだけを変更し、Unity は起動しません。
+指定したフィールドだけを変更し、Unity は起動しません。すでに同じ状態の場合はサーバー更新を行わず成功で終了します。
 
 ### アップロード前にチェック
 
@@ -168,14 +169,14 @@ jobs:
           --project .
           --scene Assets/Scenes/Main.unity
           --platform ${{ matrix.platform }}
-          --yes --plain
+          --yes --json
 ```
 
 各ランナーには Unity、VRCLI、VPM CLI、対象プラットフォームモジュール、有効な Unity ライセンスが必要です。2 つのジョブを同時に実行するには、利用可能なランナーが 2 台必要です。
 
 ## 結果
 
-非対話コマンドは CI で読み取れる JSON を最後に出力します。
+`--json` を使用すると stdout には結果オブジェクトを 1 つだけ出力し、診断ログは stderr に分離します。
 
 ```json
 {
