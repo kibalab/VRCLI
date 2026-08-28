@@ -324,6 +324,42 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
+    public void ParsesJsonTerminalMode()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(new[]
+        {
+            "deploy",
+            "--project", ".",
+            "--login", "kibalab",
+            "--password", "1234",
+            "--json"
+        });
+
+        Assert.Null(result.Error);
+        Assert.Equal(TerminalMode.Json, result.Options?.TerminalMode);
+    }
+
+    [Theory]
+    [InlineData("--json", "--plain")]
+    [InlineData("--json", "--tui")]
+    [InlineData("--plain", "--tui")]
+    public void RejectsConflictingOutputModes(string first, string second)
+    {
+        ParseResult result = new CommandLineParser().Parse(new[]
+        {
+            "deploy",
+            "--project", ".",
+            "--login", "kibalab",
+            "--password", "1234",
+            first,
+            second
+        });
+
+        Assert.Contains("only one output mode", result.Error);
+    }
+
+    [Fact]
     public void InteractiveTwoFactorIgnoresDefaultTotpEnvironment()
     {
         Environment.SetEnvironmentVariable("VRCLI_TOTP_SECRET", "SHOULD_NOT_BE_USED");

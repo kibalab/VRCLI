@@ -13,6 +13,7 @@ public sealed class CommandLineParser
         "verbose",
         "tui",
         "plain",
+        "json",
         "yes",
         "new"
     };
@@ -134,6 +135,14 @@ public sealed class CommandLineParser
         if (values.ContainsKey("help"))
         {
             return ParseResult.Help();
+        }
+
+        int outputModes = (values.ContainsKey("tui") ? 1 : 0) +
+                          (values.ContainsKey("plain") ? 1 : 0) +
+                          (values.ContainsKey("json") ? 1 : 0);
+        if (outputModes > 1)
+        {
+            return ParseResult.Failure("Use only one output mode: --tui, --plain, or --json.");
         }
 
         SetMissing(values, "project", Environment.GetEnvironmentVariable(DeploymentEnvironment.Project));
@@ -312,7 +321,9 @@ public sealed class CommandLineParser
             values.ContainsKey("skip-vpm-resolve"),
             values.ContainsKey("yes"),
             values.ContainsKey("verbose"),
-            values.ContainsKey("tui") ? TerminalMode.Tui : values.ContainsKey("plain") ? TerminalMode.Plain : TerminalMode.Auto);
+            values.ContainsKey("tui") ? TerminalMode.Tui :
+            values.ContainsKey("plain") ? TerminalMode.Plain :
+            values.ContainsKey("json") ? TerminalMode.Json : TerminalMode.Auto);
 
         return ParseResult.Success(options);
     }

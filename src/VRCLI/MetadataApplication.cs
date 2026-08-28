@@ -8,11 +8,13 @@ public sealed record MetadataExecutionResult(int ExitCode, DeploymentResult Resu
 public sealed class MetadataApplication(TextWriter output, TextWriter error)
 {
     private static readonly JsonSerializerOptions ResultJsonOptions = new() { WriteIndented = true };
+    private TextWriter logOutput = null!;
 
     public async Task<MetadataExecutionResult> RunAsync(
         DeployOptions options,
         CancellationToken cancellationToken = default)
     {
+        logOutput = options.TerminalMode == TerminalMode.Json ? error : output;
         TerminalProgressRenderer? terminalUi = null;
         if (TerminalProgressRenderer.ShouldUse(options.TerminalMode, options.Verbose))
         {
@@ -83,8 +85,8 @@ public sealed class MetadataApplication(TextWriter output, TextWriter error)
             if (terminalUi != null) await terminalUi.FinishAsync(true);
             else
             {
-                await output.WriteLineAsync("[VRCLI][META] Applied changes:");
-                foreach (MetadataChange change in applied) await output.WriteLineAsync("[VRCLI][META] " + FormatChange(change));
+                await logOutput.WriteLineAsync("[VRCLI][META] Applied changes:");
+                foreach (MetadataChange change in applied) await logOutput.WriteLineAsync("[VRCLI][META] " + FormatChange(change));
             }
 
             DeploymentResult success = new(
@@ -104,6 +106,7 @@ public sealed class MetadataApplication(TextWriter output, TextWriter error)
             if (terminalUi != null) await terminalUi.FinishAsync(false);
             await error.WriteLineAsync("VRCLI: Cancelled.");
             DeploymentResult cancelled = Failure(ExitCodes.TimedOut, "cancelled", "Metadata update cancelled.");
+            await output.WriteLineAsync(JsonSerializer.Serialize(cancelled, ResultJsonOptions));
             return new MetadataExecutionResult(cancelled.ExitCode, cancelled);
         }
         catch (Exception exception) when (exception is VrchatApiException or HttpRequestException or TaskCanceledException)
@@ -115,6 +118,14 @@ public sealed class MetadataApplication(TextWriter output, TextWriter error)
             DeploymentResult failure = Failure(exitCode, stage, exception.Message);
             await output.WriteLineAsync(JsonSerializer.Serialize(failure, ResultJsonOptions));
             return new MetadataExecutionResult(exitCode, failure);
+        }
+        catch (Exception exception)
+        {
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            await error.WriteLineAsync("VRCLI: " + exception.Message);
+            DeploymentResult failure = Failure(ExitCodes.UnexpectedError, "unexpected", exception.Message);
+            await output.WriteLineAsync(JsonSerializer.Serialize(failure, ResultJsonOptions));
+            return new MetadataExecutionResult(failure.ExitCode, failure);
         }
     }
 
@@ -159,7 +170,7 @@ public sealed class MetadataApplication(TextWriter output, TextWriter error)
             terminalUi.Report(area, message, startsPhase);
             return Task.CompletedTask;
         }
-        return output.WriteLineAsync($"[VRCLI][{area}] {message}");
+        return logOutput.WriteLineAsync($"[VRCLI][{area}] {message}");
     }
 
     private void Report(
@@ -169,7 +180,7 @@ public sealed class MetadataApplication(TextWriter output, TextWriter error)
         bool startsPhase = false)
     {
         if (terminalUi != null) terminalUi.Report(area, message, startsPhase);
-        else output.WriteLine($"[VRCLI][{area}] {message}");
+        else logOutput.WriteLine($"[VRCLI][{area}] {message}");
     }
 
     private static string Display(string value)

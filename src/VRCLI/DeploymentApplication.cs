@@ -12,11 +12,15 @@ public sealed class DeploymentApplication(
 {
     private static readonly JsonSerializerOptions ResultJsonOptions = new() { WriteIndented = true };
     private readonly CommandLineParser parser = new();
+    private bool jsonOutput;
+
+    private TextWriter LogOutput => jsonOutput ? error : output;
 
     public DeploymentResult? LastResult { get; private set; }
 
     public async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
     {
+        jsonOutput = args.Any(argument => string.Equals(argument, "--json", StringComparison.OrdinalIgnoreCase));
         ParseResult parsed = parser.Parse(args, newBlueprintOverride);
         if (parsed.ShowHelp)
         {
@@ -28,16 +32,17 @@ public sealed class DeploymentApplication(
         {
             await error.WriteLineAsync("VRCLI: " + parsed.Error);
             await error.WriteLineAsync("Run 'VRCLI.exe --help' for usage.");
-            return ExitCodes.InvalidArguments;
+            return await WriteFailureAsync(ExitCodes.InvalidArguments, "arguments", parsed.Error);
         }
 
         DeployOptions options = parsed.Options!;
         bool useTerminalUi = TerminalProgressRenderer.ShouldUse(options.TerminalMode, options.Verbose);
-        if (!useTerminalUi) await Branding.WriteAsync(output);
+        if (!useTerminalUi && !jsonOutput) await Branding.WriteAsync(output);
         if (options.ThumbnailPath != null && !File.Exists(options.ThumbnailPath))
         {
-            await error.WriteLineAsync($"VRCLI: Thumbnail was not found: {options.ThumbnailPath}");
-            return ExitCodes.ProjectInvalid;
+            string message = $"Thumbnail was not found: {options.ThumbnailPath}";
+            await error.WriteLineAsync("VRCLI: " + message);
+            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", message, options);
         }
 
         if (options.Operation == OperationMode.Meta)
@@ -55,14 +60,15 @@ public sealed class DeploymentApplication(
         if (!project.IsValid)
         {
             await error.WriteLineAsync("VRCLI: " + project.Error);
-            return ExitCodes.ProjectInvalid;
+            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", project.Error!, options);
         }
 
         string? unityPath = UnityLocator.Find(project.UnityVersion!, options.UnityPath);
         if (unityPath == null)
         {
-            await error.WriteLineAsync($"VRCLI: Unity {project.UnityVersion} was not found. Use --unity or UNITY_EDITOR_PATH.");
-            return ExitCodes.ProjectInvalid;
+            string message = $"Unity {project.UnityVersion} was not found. Use --unity or UNITY_EDITOR_PATH.";
+            await error.WriteLineAsync("VRCLI: " + message);
+            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", message, options);
         }
 
         ConcurrentBag<string> secrets = new(
@@ -92,7 +98,11 @@ public sealed class DeploymentApplication(
             await error.WriteLineAsync(
                 "VRCLI: --interactive-two-factor requires a local interactive terminal. " +
                 "For CI, set VRCLI_TOTP_SECRET instead.");
-            return ExitCodes.InvalidArguments;
+            return await WriteFailureAsync(
+                ExitCodes.InvalidArguments,
+                "arguments",
+                "--interactive-two-factor requires a local interactive terminal.",
+                options);
         }
         if (terminalUi != null)
         {
@@ -108,14 +118,18 @@ public sealed class DeploymentApplication(
                 if (vpmExitCode != ExitCodes.Success)
                 {
                     if (terminalUi != null) await terminalUi.FinishAsync(false);
-                    return vpmExitCode;
+                    return await WriteFailureAsync(
+                        vpmExitCode,
+                        "dependencies",
+                        "VPM dependency restore failed.",
+                        options);
                 }
             }
             catch (OperationCanceledException)
             {
                 if (terminalUi != null) await terminalUi.FinishAsync(false);
                 await error.WriteLineAsync("VRCLI: Cancelled.");
-                return ExitCodes.TimedOut;
+                return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Operation cancelled.", options);
             }
         }
         else
@@ -141,7 +155,7 @@ public sealed class DeploymentApplication(
         {
             if (terminalUi != null) await terminalUi.FinishAsync(false);
             await error.WriteLineAsync("VRCLI: " + exception.Message);
-            return ExitCodes.ProjectInvalid;
+            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", exception.Message, options);
         }
 
         string resultFile = Path.Combine(Path.GetTempPath(), $"vrcli-result-{Guid.NewGuid():N}.json");
@@ -176,7 +190,7 @@ public sealed class DeploymentApplication(
                 : terminalUi;
             ChildProcessResult result = await ChildProcess.RunAsync(
                 unity,
-                output,
+                LogOutput,
                 error,
                 options.Timeout,
                 secrets,
@@ -185,8 +199,9 @@ public sealed class DeploymentApplication(
             if (result.TimedOut)
             {
                 if (terminalUi != null) await terminalUi.FinishAsync(false);
-                await error.WriteLineAsync($"VRCLI: Unity timed out after {options.Timeout.TotalSeconds:0} seconds.");
-                return ExitCodes.TimedOut;
+                string message = $"Unity timed out after {options.Timeout.TotalSeconds:0} seconds.";
+                await error.WriteLineAsync("VRCLI: " + message);
+                return await WriteFailureAsync(ExitCodes.TimedOut, "timeout", message, options);
             }
 
             DeploymentResult? bridgeResult = await ReadResultAsync(resultFile);
@@ -219,40 +234,61 @@ public sealed class DeploymentApplication(
                     };
                 }
             }
-            LastResult = bridgeResult;
-            if (terminalUi != null) await terminalUi.FinishAsync(bridgeResult?.Success == true);
             if (bridgeResult != null)
             {
-                await output.WriteLineAsync(JsonSerializer.Serialize(bridgeResult, ResultJsonOptions));
+                bool blueprintOutputWritten = false;
                 if (bridgeResult.Success && options.BlueprintOutputPath != null && !string.IsNullOrWhiteSpace(bridgeResult.Blueprint))
                 {
                     try
                     {
                         await BlueprintOutputWriter.WriteAsync(options.BlueprintOutputPath, bridgeResult.Blueprint);
-                        await output.WriteLineAsync($"[VRCLI] Blueprint ID written to {options.BlueprintOutputPath}");
+                        blueprintOutputWritten = true;
                     }
                     catch (Exception exception)
                     {
-                        await error.WriteLineAsync($"VRCLI: Upload succeeded, but the Blueprint output could not be written: {exception.Message}");
-                        return ExitCodes.UnexpectedError;
+                        string message =
+                            "World upload succeeded, but the Blueprint output could not be written: " + exception.Message;
+                        await error.WriteLineAsync("VRCLI: " + message);
+                        DeploymentResult partialFailure = bridgeResult with
+                        {
+                            Success = false,
+                            ExitCode = ExitCodes.UnexpectedError,
+                            Stage = "blueprint-output",
+                            Message = message
+                        };
+                        if (terminalUi != null) await terminalUi.FinishAsync(false);
+                        await WriteResultAsync(partialFailure);
+                        return partialFailure.ExitCode;
                     }
                 }
+
+                LastResult = bridgeResult;
+                if (terminalUi != null) await terminalUi.FinishAsync(bridgeResult.Success);
+                if (blueprintOutputWritten && !jsonOutput)
+                    await output.WriteLineAsync($"[VRCLI] Blueprint ID written to {options.BlueprintOutputPath}");
+                await WriteResultAsync(bridgeResult);
                 return bridgeResult.ExitCode;
             }
 
-            return result.ExitCode == 0 ? ExitCodes.UnexpectedError : result.ExitCode;
+            int missingResultExitCode = result.ExitCode == 0 ? ExitCodes.UnexpectedError : result.ExitCode;
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            return await WriteFailureAsync(
+                missingResultExitCode,
+                "unity",
+                "Unity exited without producing a deployment result.",
+                options);
         }
         catch (OperationCanceledException)
         {
             if (terminalUi != null) await terminalUi.FinishAsync(false);
             await error.WriteLineAsync("VRCLI: Cancelled.");
-            return ExitCodes.TimedOut;
+            return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Operation cancelled.", options);
         }
         catch (Exception exception)
         {
             if (terminalUi != null) await terminalUi.FinishAsync(false);
             await error.WriteLineAsync("VRCLI: " + exception.Message);
-            return ExitCodes.UnexpectedError;
+            return await WriteFailureAsync(ExitCodes.UnexpectedError, "unexpected", exception.Message, options);
         }
         finally
         {
@@ -292,7 +328,7 @@ public sealed class DeploymentApplication(
         {
             ChildProcessResult result = await ChildProcess.RunAsync(
                 vpm,
-                output,
+                LogOutput,
                 error,
                 TimeSpan.FromMinutes(10),
                 secrets,
@@ -377,7 +413,31 @@ public sealed class DeploymentApplication(
             return Task.CompletedTask;
         }
 
-        return output.WriteLineAsync($"[VRCLI][{area}] {message}");
+        return LogOutput.WriteLineAsync($"[VRCLI][{area}] {message}");
+    }
+
+    private async Task<int> WriteFailureAsync(
+        int exitCode,
+        string stage,
+        string message,
+        DeployOptions? options = null)
+    {
+        DeploymentResult result = new(
+            false,
+            exitCode,
+            string.IsNullOrWhiteSpace(options?.BlueprintId) ? null : options.BlueprintId,
+            false,
+            options?.Operation == OperationMode.Meta ? null : options?.Platform.ToString(),
+            stage,
+            message);
+        await WriteResultAsync(result);
+        return exitCode;
+    }
+
+    private async Task WriteResultAsync(DeploymentResult result)
+    {
+        LastResult = result;
+        await output.WriteLineAsync(JsonSerializer.Serialize(result, ResultJsonOptions));
     }
 
     private static async Task<DeploymentResult?> ReadResultAsync(string resultFile)
@@ -414,6 +474,7 @@ VRCLI commands and parameters
   --interactive-two-factor      Prompt only when VRChat requests two-factor authentication
   --config <file>               Configuration file; default ./vrcli.json when present
   --plain                       Append-only output for scripts and CI
+  --json                        Write one result object to stdout; logs go to stderr
   --yes                         Certify content ownership when deployment requires it
   --tui                         Force the interactive terminal display
   --unity <Unity.exe>           Override Unity executable discovery

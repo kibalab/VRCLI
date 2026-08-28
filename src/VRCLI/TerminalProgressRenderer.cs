@@ -98,7 +98,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
 
     public static bool ShouldUse(TerminalMode mode, bool verbose)
     {
-        if (mode == TerminalMode.Plain) return false;
+        if (mode is TerminalMode.Plain or TerminalMode.Json) return false;
         if (mode == TerminalMode.Tui)
         {
             TryEnableVirtualTerminal();

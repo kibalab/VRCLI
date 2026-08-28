@@ -46,5 +46,6 @@ public enum TerminalMode
 {
     Auto,
     Tui,
-    Plain
+    Plain,
+    Json
 }
