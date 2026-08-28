@@ -85,7 +85,7 @@ public sealed class TerminalProgressRendererTests
 
         string rendered = output.ToString();
         Assert.Contains(" ___ ___  ______  ______  _____    _______ ", activeScreen);
-        Assert.Contains("KIBA_\n\n WORLD DEPLOY", activeScreen);
+        Assert.Contains(new string(' ', 36) + "by KIBA_\n\n WORLD DEPLOY", activeScreen);
         Assert.Contains("VRCLI", activeScreen);
         Assert.Contains("WORLD DEPLOY", activeScreen);
         Assert.Contains("Example Project", activeScreen);

@@ -440,7 +440,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         if (logo.Count > 1)
         {
             foreach (string line in logo) lines.Add(" " + Paint(line, "36;1"));
-            lines.Add(" " + Paint(Branding.Credit, "90;1"));
+            lines.Add(" " + Paint(Branding.CreditLine, "90;1"));
             lines.Add(string.Empty);
             lines.Add(Paint(" " + OperationTitle(), "90;1"));
         }

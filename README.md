@@ -7,7 +7,7 @@
 |   |   ||   __ \|      ||     |_ |_     _|
 |   |   ||      <|   ---||       | _|   |_
  \_____/ |___|__||______||_______||_______|
-KIBA_
+                                   by KIBA_
 ```
 
 VRCLI builds, checks, and uploads VRChat worlds from a terminal or CI runner.

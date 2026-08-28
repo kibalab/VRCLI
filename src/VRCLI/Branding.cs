@@ -2,7 +2,7 @@ namespace KibaLab.WorldDeployment;
 
 public static class Branding
 {
-    public const string Credit = "KIBA_";
+    public const string Credit = "by KIBA_";
 
     public static IReadOnlyList<string> LogoLines { get; } =
     [
@@ -12,11 +12,14 @@ public static class Branding
         " \\_____/ |___|__||______||_______||_______|"
     ];
 
+    public static int LogoWidth { get; } = LogoLines.Max(line => line.Length);
+    public static string CreditLine => Credit.PadLeft(LogoWidth);
+
     public static string LogoText => string.Join(Environment.NewLine, LogoLines) +
-                                     Environment.NewLine + Credit;
+                                     Environment.NewLine + CreditLine;
 
     public static IReadOnlyList<string> Fit(int width) =>
-        width >= LogoLines.Max(line => line.Length) ? LogoLines : ["VRCLI"];
+        width >= LogoWidth ? LogoLines : ["VRCLI"];
 
     public static Task WriteAsync(TextWriter writer) =>
         writer.WriteLineAsync(LogoText);
