@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -17,58 +17,155 @@ env:
   DOTNET_NOLOGO: true
 
 jobs:
-  release:
+  version:
     runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.version.outputs.value }}
     steps:
       - name: Check out tagged commit
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: 8.0.x
 
-      - name: Verify tag and project version
+      - name: Verify tag and package versions
         id: version
         shell: bash
         run: |
           set -euo pipefail
-          version="$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props)"
-          if [[ -z "$version" ]]; then
+          cli_version="$(sed -n 's:.*<VersionPrefix>\(.*\)</VersionPrefix>.*:\1:p' Directory.Build.props)"
+          package_version="$(node -p "require('./Packages/com.kibalab.vrcli/package.json').version")"
+          if [[ -z "$cli_version" ]]; then
             echo "VersionPrefix was not found in Directory.Build.props." >&2
             exit 1
           fi
-          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
-            echo "Tag $GITHUB_REF_NAME does not match project version v$version." >&2
+          if [[ "$cli_version" != "$package_version" ]]; then
+            echo "CLI version $cli_version does not match Unity package version $package_version." >&2
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_NAME" != "v$cli_version" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match project version v$cli_version." >&2
+            exit 1
+          fi
+          echo "value=$cli_version" >> "$GITHUB_OUTPUT"
 
       - name: Test
         run: dotnet test VRCLI.sln --configuration Release
 
-      - name: Build release packages
+  build:
+    name: Build ${{ matrix.runtime }}
+    needs: version
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            runtime: win-x64
+            executable: artifacts/win-x64/VRCLI.exe
+          - os: macos-15
+            runtime: osx-arm64
+            executable: artifacts/osx-arm64/VRCLI
+          - os: macos-15-intel
+            runtime: osx-x64
+            executable: artifacts/osx-x64/VRCLI
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish native executable
+        run: >-
+          dotnet publish src/VRCLI/VRCLI.csproj
+          --configuration Release
+          --runtime ${{ matrix.runtime }}
+          --self-contained true
+          --output artifacts/${{ matrix.runtime }}
+          -p:Version=${{ needs.version.outputs.value }}
+
+      - name: Smoke test native executable
+        shell: pwsh
+        run: '& "${{ matrix.executable }}" --help'
+
+      - name: Upload native build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: VRCLI-${{ matrix.runtime }}
+          path: artifacts/${{ matrix.runtime }}
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Download native builds
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: VRCLI-*
+          path: artifacts/native
+
+      - name: Assemble release packages
         shell: bash
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.value }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/packages
 
-          for runtime in win-x64 osx-x64 osx-arm64; do
-            dotnet publish src/VRCLI/VRCLI.csproj \
-              --configuration Release \
-              --runtime "$runtime" \
-              --self-contained true \
-              --output "artifacts/$runtime" \
-              -p:Version="$VERSION"
-          done
+          chmod +x artifacts/native/VRCLI-osx-x64/VRCLI
+          chmod +x artifacts/native/VRCLI-osx-arm64/VRCLI
+          (cd artifacts/native/VRCLI-win-x64 && zip -q -r "../../packages/VRCLI-$VERSION-win-x64.zip" .)
+          tar -C artifacts/native/VRCLI-osx-x64 -czf "artifacts/packages/VRCLI-$VERSION-osx-x64.tar.gz" .
+          tar -C artifacts/native/VRCLI-osx-arm64 -czf "artifacts/packages/VRCLI-$VERSION-osx-arm64.tar.gz" .
+          (cd Packages/com.kibalab.vrcli && zip -q -r "$GITHUB_WORKSPACE/artifacts/packages/com.kibalab.vrcli-$VERSION.zip" .)
 
-          chmod +x artifacts/osx-x64/VRCLI artifacts/osx-arm64/VRCLI
-          (cd artifacts/win-x64 && zip -q -r "../packages/VRCLI-$VERSION-win-x64.zip" .)
-          tar -C artifacts/osx-x64 -czf "artifacts/packages/VRCLI-$VERSION-osx-x64.tar.gz" .
-          tar -C artifacts/osx-arm64 -czf "artifacts/packages/VRCLI-$VERSION-osx-arm64.tar.gz" .
-          (cd artifacts/packages && sha256sum VRCLI-* > SHA256SUMS.txt)
+      - name: Generate SPDX SBOM
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          dotnet tool install Microsoft.Sbom.DotNetTool --version 4.1.5 --tool-path "$RUNNER_TEMP/sbom"
+          "$RUNNER_TEMP/sbom/sbom-tool" generate \
+            -b "$GITHUB_WORKSPACE/artifacts/packages" \
+            -bc "$GITHUB_WORKSPACE" \
+            -pn VRCLI \
+            -pv "$VERSION" \
+            -ps KIBA_ \
+            -nsb "https://github.com/kibalab/VRCLI"
+          mv artifacts/packages/_manifest/spdx_2.2/manifest.spdx.json \
+            "artifacts/packages/VRCLI-$VERSION.spdx.json"
+          rm -rf artifacts/packages/_manifest
+
+      - name: Write SHA-256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd artifacts/packages && sha256sum VRCLI-* com.kibalab.vrcli-* > SHA256SUMS.txt)
+
+      - name: Attest release artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-checksums: artifacts/packages/SHA256SUMS.txt
 
       - name: Publish GitHub Release
         shell: bash
