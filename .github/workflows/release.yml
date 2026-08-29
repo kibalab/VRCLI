@@ -182,24 +182,6 @@ jobs:
           cp scripts/install-vrcli.ps1 artifacts/packages/install-vrcli.ps1
           cp scripts/install-vrcli.sh artifacts/packages/install-vrcli.sh
 
-      - name: Generate SPDX SBOM
-        shell: bash
-        env:
-          VERSION: ${{ needs.version.outputs.value }}
-        run: |
-          set -euo pipefail
-          dotnet tool install Microsoft.Sbom.DotNetTool --version 4.1.5 --tool-path "$RUNNER_TEMP/sbom"
-          "$RUNNER_TEMP/sbom/sbom-tool" generate \
-            -b "$GITHUB_WORKSPACE/artifacts/packages" \
-            -bc "$GITHUB_WORKSPACE" \
-            -pn VRCLI \
-            -pv "$VERSION" \
-            -ps KIBA_ \
-            -nsb "https://github.com/kibalab/VRCLI"
-          mv artifacts/packages/_manifest/spdx_2.2/manifest.spdx.json \
-            "artifacts/packages/VRCLI-$VERSION.spdx.json"
-          rm -rf artifacts/packages/_manifest
-
       - name: Generate Homebrew Formula
         shell: pwsh
         env:
@@ -228,11 +210,29 @@ jobs:
             -Path artifacts/winget/manifests `
             -DestinationPath "artifacts/packages/kibalab.VRCLI-$env:VERSION-winget.zip"
 
+      - name: Generate SPDX SBOM
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          dotnet tool install Microsoft.Sbom.DotNetTool --version 4.1.5 --tool-path "$RUNNER_TEMP/sbom"
+          "$RUNNER_TEMP/sbom/sbom-tool" generate \
+            -b "$GITHUB_WORKSPACE/artifacts/packages" \
+            -bc "$GITHUB_WORKSPACE" \
+            -pn VRCLI \
+            -pv "$VERSION" \
+            -ps KIBA_ \
+            -nsb "https://github.com/kibalab/VRCLI"
+          mv artifacts/packages/_manifest/spdx_2.2/manifest.spdx.json \
+            "artifacts/packages/VRCLI-$VERSION.spdx.json"
+          rm -rf artifacts/packages/_manifest
+
       - name: Write SHA-256 checksums
         shell: bash
         run: |
           set -euo pipefail
-          (cd artifacts/packages && sha256sum VRCLI-* com.kibalab.vrcli-* kibalab.VRCLI-* vrcli.rb > SHA256SUMS.txt)
+          (cd artifacts/packages && sha256sum * > SHA256SUMS.txt)
 
       - name: Attest release artifacts
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
