@@ -37,42 +37,31 @@ Windows はエンドツーエンドで検証済みです。macOS は Apple Silic
 
 ## インストール
 
-[GitHub Releases の最新版](https://github.com/kibalab/VRCLI/releases/latest)から、すぐに実行できるアーカイブをダウンロードしてください。
+[GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest) から最新版をダウンロードできます。.NET は不要です。
 
-- Windows x64: `VRCLI-x.y.z-win-x64.zip`
-- Apple Silicon Mac: `VRCLI-x.y.z-osx-arm64.tar.gz`
-- Intel Mac: `VRCLI-x.y.z-osx-x64.tar.gz`
-
-展開後、Windows では `VRCLI.exe`、macOS では `./VRCLI` を実行します。macOS では先に実行権限を付与してください。
-
-```bash
-chmod +x VRCLI
-./VRCLI
-```
-
-### ソースからビルド
-
-.NET 8 SDK をインストールし、リポジトリをクローンして対象プラットフォーム向けにビルドします。
-
-Windows:
+### Windows
 
 ```powershell
-git clone https://github.com/kibalab/VRCLI.git
-cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj -c Release -r win-x64 `
-  --self-contained true -o artifacts/win-x64
+irm https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile install-vrcli.ps1
+powershell -ExecutionPolicy Bypass -File .\install-vrcli.ps1
 ```
 
-Apple Silicon Mac（Intel は `osx-x64` を使用）:
+- セットアップ: `VRCLI-x.y.z-win-x64-setup.exe`
+- ポータブル: `VRCLI-x.y.z-win-x64.zip`
+- カタログ公開後の WinGet: `winget install --id kibalab.VRCLI --exact`
+
+### macOS
 
 ```bash
-git clone https://github.com/kibalab/VRCLI.git
-cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj -c Release -r osx-arm64 \
-  --self-contained true -o artifacts/osx-arm64
-
-export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Contents/MacOS/Unity"
+curl -fLO https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh
+sh install-vrcli.sh
 ```
+
+- インストーラー: `VRCLI-x.y.z-osx-arm64.pkg` または `VRCLI-x.y.z-osx-x64.pkg`
+- ポータブル: アーキテクチャに合う `.tar.gz`
+- Tap 公開後の Homebrew: `brew install kibalab/tap/vrcli`
+
+現在の macOS パッケージは未署名・未公証です。
 
 ## 対話型で使う
 
@@ -229,7 +218,7 @@ jobs:
   "Stage": "complete",
   "Message": "World build and upload completed.",
   "Verified": true,
-  "VrcliVersion": "0.19.0",
+  "VrcliVersion": "0.20.0",
   "UnityVersion": "2022.3.22f1",
   "SdkVersion": "3.10.1",
   "DurationMs": 120000,

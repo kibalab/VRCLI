@@ -57,6 +57,48 @@ jobs:
         shell: pwsh
         run: '& "${{ matrix.executable }}" --help'
 
+      - name: Test Windows PowerShell installation
+        if: matrix.runtime == 'win-x64'
+        shell: pwsh
+        run: ./tests/packaging/Test-WindowsPowerShellInstall.ps1 -PublishDirectory artifacts/win-x64
+
+      - name: Test Windows Setup installation
+        if: matrix.runtime == 'win-x64'
+        shell: pwsh
+        run: ./tests/packaging/Test-WindowsSetup.ps1 -PublishDirectory artifacts/win-x64
+
+      - name: Test WinGet manifests
+        if: matrix.runtime == 'win-x64'
+        shell: pwsh
+        run: ./tests/packaging/Test-WingetManifest.ps1
+
+      - name: Test macOS shell installation
+        if: startsWith(matrix.runtime, 'osx-')
+        shell: bash
+        run: ./tests/packaging/test-macos-shell-install.sh artifacts/${{ matrix.runtime }}
+
+      - name: Test macOS package installation
+        if: startsWith(matrix.runtime, 'osx-')
+        shell: bash
+        run: ./tests/packaging/test-macos-pkg-install.sh artifacts/${{ matrix.runtime }} ${{ matrix.runtime }}
+
+      - name: Test Homebrew Formula
+        if: startsWith(matrix.runtime, 'osx-')
+        shell: bash
+        run: |
+          set +e
+          output="${RUNNER_TEMP}/homebrew-formula.log"
+          ./tests/packaging/test-homebrew-formula.sh \
+            artifacts/${{ matrix.runtime }} \
+            ${{ matrix.runtime }} >"$output" 2>&1
+          status=$?
+          cat "$output"
+          if [[ $status -ne 0 ]]; then
+            message=$(tail -n 30 "$output" | sed 's/%/%25/g; s/\r/%0D/g' | awk 'BEGIN { ORS="%0A" } { print }')
+            echo "::error file=tests/packaging/test-homebrew-formula.sh,line=1,title=Homebrew Formula validation failed::$message"
+          fi
+          exit "$status"
+
       - name: Upload native executable
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

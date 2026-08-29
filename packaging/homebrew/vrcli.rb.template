@@ -1,0 +1,25 @@
+class Vrcli < Formula
+  desc "Build, check, and upload VRChat worlds and avatars"
+  homepage "https://github.com/kibalab/VRCLI"
+  version "@VERSION@"
+  license "MIT"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "@ARM64_URL@"
+      sha256 "@ARM64_SHA256@"
+    else
+      url "@X64_URL@"
+      sha256 "@X64_SHA256@"
+    end
+  end
+
+  def install
+    libexec.install Dir["*"]
+    bin.install_symlink libexec/"VRCLI" => "vrcli"
+  end
+
+  test do
+    assert_match "VRCLI", shell_output("#{bin}/vrcli --help")
+  end
+end

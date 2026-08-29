@@ -37,42 +37,31 @@ Windows는 전체 과정을 검증했습니다. macOS는 Apple Silicon/Intel 빌
 
 ## 설치
 
-[GitHub Releases의 최신 버전](https://github.com/kibalab/VRCLI/releases/latest)에서 바로 실행할 수 있는 압축 파일을 다운로드하세요.
+[GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest)에서 최신 버전을 받을 수 있습니다. .NET은 필요하지 않습니다.
 
-- Windows x64: `VRCLI-x.y.z-win-x64.zip`
-- Apple Silicon Mac: `VRCLI-x.y.z-osx-arm64.tar.gz`
-- Intel Mac: `VRCLI-x.y.z-osx-x64.tar.gz`
-
-압축을 푼 뒤 Windows에서는 `VRCLI.exe`, macOS에서는 `./VRCLI`를 실행합니다. macOS에서는 먼저 실행 권한을 부여하세요.
-
-```bash
-chmod +x VRCLI
-./VRCLI
-```
-
-### 소스에서 빌드
-
-.NET 8 SDK를 설치하고 저장소를 복제한 뒤 사용할 플랫폼으로 빌드합니다.
-
-Windows:
+### Windows
 
 ```powershell
-git clone https://github.com/kibalab/VRCLI.git
-cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj -c Release -r win-x64 `
-  --self-contained true -o artifacts/win-x64
+irm https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile install-vrcli.ps1
+powershell -ExecutionPolicy Bypass -File .\install-vrcli.ps1
 ```
 
-Apple Silicon Mac(Intel은 `osx-x64` 사용):
+- 설치 프로그램: `VRCLI-x.y.z-win-x64-setup.exe`
+- Portable: `VRCLI-x.y.z-win-x64.zip`
+- 카탈로그 등록 후 WinGet: `winget install --id kibalab.VRCLI --exact`
+
+### macOS
 
 ```bash
-git clone https://github.com/kibalab/VRCLI.git
-cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj -c Release -r osx-arm64 \
-  --self-contained true -o artifacts/osx-arm64
-
-export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Contents/MacOS/Unity"
+curl -fLO https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh
+sh install-vrcli.sh
 ```
+
+- 설치 프로그램: `VRCLI-x.y.z-osx-arm64.pkg` 또는 `VRCLI-x.y.z-osx-x64.pkg`
+- Portable: 아키텍처에 맞는 `.tar.gz`
+- Tap 공개 후 Homebrew: `brew install kibalab/tap/vrcli`
+
+현재 macOS 패키지는 서명 및 공증되지 않았습니다.
 
 ## 대화형으로 사용
 
@@ -229,7 +218,7 @@ jobs:
   "Stage": "complete",
   "Message": "World build and upload completed.",
   "Verified": true,
-  "VrcliVersion": "0.19.0",
+  "VrcliVersion": "0.20.0",
   "UnityVersion": "2022.3.22f1",
   "SdkVersion": "3.10.1",
   "DurationMs": 120000,

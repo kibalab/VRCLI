@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.20.0
+
+- Added checksum-verified PowerShell and shell installers that make `vrcli` available on the user PATH.
+- Added Windows Setup, macOS PKG, WinGet `kibalab.VRCLI` manifests, and a dual-architecture Homebrew Formula.
+- Added portable Windows, Apple silicon, and Intel macOS packages to the unified release workflow.
+- Included every installer and package-manager artifact in release checksums, SBOM generation, and provenance attestation.
+
 ## 0.19.0
 
 - Added automatic World/Avatar project detection, multi-avatar target selection, and avatar metadata editing.

@@ -37,42 +37,31 @@ Windows is tested end to end. macOS builds and Unity Hub discovery support Apple
 
 ## Install
 
-Download the latest ready-to-run archive from [GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest):
+Download the latest version from [GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest). .NET is not required.
 
-- Windows x64: `VRCLI-x.y.z-win-x64.zip`
-- Apple silicon Mac: `VRCLI-x.y.z-osx-arm64.tar.gz`
-- Intel Mac: `VRCLI-x.y.z-osx-x64.tar.gz`
-
-Extract the archive, then run `VRCLI.exe` on Windows or `./VRCLI` on macOS. On macOS, make the extracted file executable first:
-
-```bash
-chmod +x VRCLI
-./VRCLI
-```
-
-### Build from source
-
-Install the .NET 8 SDK, clone the repository, and publish for your platform.
-
-Windows:
+### Windows
 
 ```powershell
-git clone https://github.com/kibalab/VRCLI.git
-cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj -c Release -r win-x64 `
-  --self-contained true -o artifacts/win-x64
+irm https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile install-vrcli.ps1
+powershell -ExecutionPolicy Bypass -File .\install-vrcli.ps1
 ```
 
-macOS Apple silicon (use `osx-x64` for Intel):
+- Setup: `VRCLI-x.y.z-win-x64-setup.exe`
+- Portable: `VRCLI-x.y.z-win-x64.zip`
+- WinGet, after catalog publication: `winget install --id kibalab.VRCLI --exact`
+
+### macOS
 
 ```bash
-git clone https://github.com/kibalab/VRCLI.git
-cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj -c Release -r osx-arm64 \
-  --self-contained true -o artifacts/osx-arm64
-
-export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Contents/MacOS/Unity"
+curl -fLO https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh
+sh install-vrcli.sh
 ```
+
+- Installer: `VRCLI-x.y.z-osx-arm64.pkg` or `VRCLI-x.y.z-osx-x64.pkg`
+- Portable: matching `.tar.gz`
+- Homebrew, after tap publication: `brew install kibalab/tap/vrcli`
+
+macOS packages are currently unsigned and not notarized.
 
 ## Use it interactively
 
@@ -229,7 +218,7 @@ Use `--json` to write exactly one result object to stdout while diagnostics go t
   "Stage": "complete",
   "Message": "World build and upload completed.",
   "Verified": true,
-  "VrcliVersion": "0.19.0",
+  "VrcliVersion": "0.20.0",
   "UnityVersion": "2022.3.22f1",
   "SdkVersion": "3.10.1",
   "DurationMs": 120000,
