@@ -42,7 +42,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $source 'UnityBridge\package.json') 
 }
 
 [System.IO.Directory]::CreateDirectory($output) | Out-Null
-& $IsccPath "/DAppVersion=$Version" "/DSourceDir=$source" "/DOutputDir=$output" $definition
+& $IsccPath "/DAppVersion=$Version" "/DSourceDir=$source" "/DOutputDir=$output" $definition |
+    ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -ne 0) {
     throw "ISCC.exe returned $LASTEXITCODE."
 }
