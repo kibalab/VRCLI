@@ -9,5 +9,11 @@ samples/
 !/README.md
 !/README.ko.md
 !/README.ja.md
+!/Packages/com.kibalab.vrcli/README.md
+!/Packages/com.kibalab.vrcli/README.md.meta
+!/Packages/com.kibalab.vrcli/CHANGELOG.md
+!/Packages/com.kibalab.vrcli/CHANGELOG.md.meta
+!/Packages/com.kibalab.vrcli/LICENSE.md
+!/Packages/com.kibalab.vrcli/LICENSE.md.meta
 *.user
 *.suo
