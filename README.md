@@ -12,6 +12,13 @@
 
 VRCLI builds, checks, and uploads VRChat worlds and avatars from a terminal or CI runner. `deploy` and `check` automatically detect the content type from the project's VPM dependencies.
 
+## Supported uploads
+
+The same `vrcli deploy` command works with both content types. Point VRCLI at a Unity project and it automatically uses the installed Worlds or Avatars SDK—no separate world/avatar command is required.
+
+- **Worlds:** upload an existing world or create a new private world, for `StandaloneWindows64` or `Android`.
+- **Avatars:** upload an existing avatar or create a new private avatar, for `StandaloneWindows64` or `Android`. When a scene contains several avatars, select one by its Hierarchy path or Blueprint ID.
+
 > Dependency notice: VRCLI is an automation layer, not a standalone content build or upload implementation. It depends entirely on a compatible Unity Editor and the matching VRChat Worlds or Avatars SDK installed in the target project; it does not replace or redistribute either product.
 >
 > Community project; not affiliated with VRChat Inc. Only upload content you have the right to use.
