@@ -59,7 +59,7 @@ sh install-vrcli.sh
 
 - インストーラー: `VRCLI-x.y.z-osx-arm64.pkg` または `VRCLI-x.y.z-osx-x64.pkg`
 - ポータブル: アーキテクチャに合う `.tar.gz`
-- Tap 公開後の Homebrew: `brew install kibalab/tap/vrcli`
+- Homebrew: `brew install kibalab/tap/vrcli`
 
 現在の macOS パッケージは未署名・未公証です。
 

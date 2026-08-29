@@ -59,7 +59,7 @@ sh install-vrcli.sh
 
 - Installer: `VRCLI-x.y.z-osx-arm64.pkg` or `VRCLI-x.y.z-osx-x64.pkg`
 - Portable: matching `.tar.gz`
-- Homebrew, after tap publication: `brew install kibalab/tap/vrcli`
+- Homebrew: `brew install kibalab/tap/vrcli`
 
 macOS packages are currently unsigned and not notarized.
 
