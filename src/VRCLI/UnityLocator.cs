@@ -22,7 +22,7 @@ public static class UnityLocator
         string userProfile,
         bool isMacOS)
     {
-        List<string?> candidates =
+        List<string?> candidates = new()
         {
             explicitPath,
             Environment.GetEnvironmentVariable("UNITY_EDITOR_PATH")
