@@ -19,6 +19,23 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+run_checked() {
+  output_file="${temporary_root}/command-output.log"
+  if "$@" >"$output_file" 2>&1; then
+    cat "$output_file"
+    return 0
+  else
+    status=$?
+  fi
+
+  cat "$output_file" >&2
+  if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    annotation=$(tail -n 20 "$output_file" | sed 's/%/%25/g; s/\r/%0D/g' | awk 'BEGIN { ORS="%0A" } { print }')
+    printf '::error title=Homebrew Formula validation failed::%s\n' "$annotation"
+  fi
+  return "$status"
+}
+
 tar -C "$publish_directory" -czf "$archive" .
 checksum=$(shasum -a 256 "$archive" | awk '{print $1}')
 archive_url="file://${archive}"
@@ -31,10 +48,10 @@ pwsh -NoLogo -NoProfile -File "${repository}/scripts/new-homebrew-formula.ps1" \
   -X64Url "$archive_url" \
   -OutputPath "$formula" >/dev/null
 
-HOMEBREW_NO_AUTO_UPDATE=1 brew install --formula "$formula"
-HOMEBREW_NO_AUTO_UPDATE=1 brew test vrcli
-"$(brew --prefix)/bin/vrcli" --help >/dev/null
-HOMEBREW_NO_AUTO_UPDATE=1 brew uninstall --formula vrcli
+run_checked env HOMEBREW_NO_AUTO_UPDATE=1 brew install --formula "$formula"
+run_checked env HOMEBREW_NO_AUTO_UPDATE=1 brew test vrcli
+run_checked "$(brew --prefix)/bin/vrcli" --help
+run_checked env HOMEBREW_NO_AUTO_UPDATE=1 brew uninstall --formula vrcli
 
 if [ -e "$(brew --prefix)/bin/vrcli" ]; then
   echo "Homebrew did not remove the vrcli command." >&2
