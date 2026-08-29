@@ -116,6 +116,13 @@ namespace KibaLab.WorldDeployment.Editor
             {
                 DeploymentLog.Phase("SDK", "Initializing the VRChat world builder.");
                 IVRCSdkWorldBuilderApi builder = await GetBuilderAsync();
+                string invalidReason;
+                if (!builder.IsValidBuilder(out invalidReason))
+                {
+                    throw new BuilderException(string.IsNullOrWhiteSpace(invalidReason)
+                        ? "The VRChat SDK world builder rejected the selected scene."
+                        : invalidReason.Replace('\n', ' '));
+                }
                 DeploymentLog.Info("SDK", "VRChat world builder is ready.");
                 if (request.IsNew) SynchronizeBuilderBlueprint(builder, request.BlueprintId);
                 EventHandler<string> buildProgress = OnBuildProgress;
