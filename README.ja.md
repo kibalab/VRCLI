@@ -37,18 +37,46 @@ Windows はエンドツーエンドで検証済みです。macOS は Apple Silic
 
 ## インストール
 
-[GitHub Releases の最新版](https://github.com/kibalab/VRCLI/releases/latest)から、すぐに実行できるアーカイブをダウンロードしてください。
+すべてのバイナリは self-contained のため、.NET を別途インストールする必要はありません。インストーラーは [GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest) で公開されます。
 
-- Windows x64: `VRCLI-x.y.z-win-x64.zip`
-- Apple Silicon Mac: `VRCLI-x.y.z-osx-arm64.tar.gz`
-- Intel Mac: `VRCLI-x.y.z-osx-x64.tar.gz`
+### Windows x64
 
-展開後、Windows では `VRCLI.exe`、macOS では `./VRCLI` を実行します。macOS では先に実行権限を付与してください。
+PowerShell インストーラー（推奨）:
+
+```powershell
+$installer = Join-Path $env:TEMP "install-vrcli.ps1"
+Invoke-WebRequest https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile $installer
+powershell -NoProfile -ExecutionPolicy Bypass -File $installer
+```
+
+リリースのチェックサムを検証し、`%LOCALAPPDATA%\Programs\VRCLI` にインストールして、ユーザーの `PATH` に `vrcli` を追加します。同じコマンドを再実行すると更新できます。
+
+その他の方法:
+
+- `VRCLI-x.y.z-win-x64-setup.exe` をダウンロードして実行すると、一般的なユーザー単位のセットアップとアンインストーラーを利用できます。
+- `VRCLI-x.y.z-win-x64.zip` を展開して `VRCLI.exe` を実行すると、ポータブル版として利用できます。
+- WinGet Community Repository でパッケージが承認された後は、`winget install --id kibalab.VRCLI --exact` でインストールできます。識別子は正確に `kibalab.VRCLI` です。
+
+### macOS
+
+シェルインストーラー（推奨）:
 
 ```bash
-chmod +x VRCLI
-./VRCLI
+installer=$(mktemp)
+curl -fL https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh -o "$installer"
+sh "$installer"
+rm "$installer"
 ```
+
+リリースのチェックサムを検証し、`~/.local` 以下にインストールして、新しいターミナルから `vrcli` を実行できるようにします。同じコマンドを再実行すると更新できます。
+
+その他の方法:
+
+- Apple Silicon は `VRCLI-x.y.z-osx-arm64.pkg`、Intel は `VRCLI-x.y.z-osx-x64.pkg` をダウンロードして開くか、`sudo installer -pkg <ファイル> -target /` でインストールできます。
+- アーキテクチャに合う `.tar.gz` を展開し、`chmod +x VRCLI && ./VRCLI` を実行するとポータブル版として利用できます。
+- 各リリースには、両アーキテクチャのチェックサムを固定した `vrcli.rb` Formula が含まれます。`kibalab/homebrew-tap` リポジトリの公開後は、`brew install kibalab/tap/vrcli` でインストールできます。
+
+現在の macOS パッケージは未署名・未公証です。macOS のセキュリティ設定で許可する前に、ダウンロードしたファイルと `SHA256SUMS.txt` のチェックサムを確認してください。
 
 ### ソースからビルド
 

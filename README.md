@@ -37,18 +37,46 @@ Windows is tested end to end. macOS builds and Unity Hub discovery support Apple
 
 ## Install
 
-Download the latest ready-to-run archive from [GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest):
+All binaries are self-contained; installing .NET is not required. Installer assets are published on [GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest).
 
-- Windows x64: `VRCLI-x.y.z-win-x64.zip`
-- Apple silicon Mac: `VRCLI-x.y.z-osx-arm64.tar.gz`
-- Intel Mac: `VRCLI-x.y.z-osx-x64.tar.gz`
+### Windows x64
 
-Extract the archive, then run `VRCLI.exe` on Windows or `./VRCLI` on macOS. On macOS, make the extracted file executable first:
+PowerShell installer (recommended):
+
+```powershell
+$installer = Join-Path $env:TEMP "install-vrcli.ps1"
+Invoke-WebRequest https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile $installer
+powershell -NoProfile -ExecutionPolicy Bypass -File $installer
+```
+
+This verifies the release checksum, installs to `%LOCALAPPDATA%\Programs\VRCLI`, and adds `vrcli` to the user `PATH`. Run it again to update.
+
+Alternatively:
+
+- Download and run `VRCLI-x.y.z-win-x64-setup.exe` for a normal per-user Setup experience and uninstaller.
+- Download `VRCLI-x.y.z-win-x64.zip`, extract it, and run `VRCLI.exe` for a portable copy.
+- Once the package is accepted into the WinGet Community Repository, install it with `winget install --id kibalab.VRCLI --exact`. The identifier is exactly `kibalab.VRCLI`.
+
+### macOS
+
+Shell installer (recommended):
 
 ```bash
-chmod +x VRCLI
-./VRCLI
+installer=$(mktemp)
+curl -fL https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh -o "$installer"
+sh "$installer"
+rm "$installer"
 ```
+
+This verifies the release checksum, installs under `~/.local`, and makes `vrcli` available from new terminal sessions. Run it again to update.
+
+Alternatively:
+
+- Download `VRCLI-x.y.z-osx-arm64.pkg` for Apple silicon or `VRCLI-x.y.z-osx-x64.pkg` for Intel, then open it or run `sudo installer -pkg <file> -target /`.
+- Download the matching `.tar.gz`, extract it, and run `chmod +x VRCLI && ./VRCLI` for a portable copy.
+- Each release includes `vrcli.rb`, a checksum-pinned Formula for both architectures. After the `kibalab/homebrew-tap` repository is published, it can be installed with `brew install kibalab/tap/vrcli`.
+
+The macOS packages are currently unsigned and not notarized. Review the downloaded asset and its entry in `SHA256SUMS.txt` before allowing it through macOS security controls.
 
 ### Build from source
 
