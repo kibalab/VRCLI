@@ -48,9 +48,15 @@ powershell -ExecutionPolicy Bypass -File .\install-vrcli.ps1
 
 - Setup: `VRCLI-x.y.z-win-x64-setup.exe`
 - Portable: `VRCLI-x.y.z-win-x64.zip`
-- WinGet, after catalog publication: `winget install --id kibalab.VRCLI --exact`
+- WinGet, pending Microsoft catalog approval: `winget install --id kibalab.VRCLI --exact`
 
 ### macOS
+
+```bash
+brew install kibalab/tap/vrcli
+```
+
+Without Homebrew:
 
 ```bash
 curl -fLO https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh
@@ -59,7 +65,6 @@ sh install-vrcli.sh
 
 - Installer: `VRCLI-x.y.z-osx-arm64.pkg` or `VRCLI-x.y.z-osx-x64.pkg`
 - Portable: matching `.tar.gz`
-- Homebrew: `brew install kibalab/tap/vrcli`
 
 macOS packages are currently unsigned and not notarized.
 
