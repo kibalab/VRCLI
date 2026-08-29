@@ -99,7 +99,7 @@ public static class InteractiveWizard
         {
             savedSessions = store.List();
         }
-        catch (Win32Exception exception)
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or InvalidDataException)
         {
             savedSessions = [];
             screen.SetNotice("Saved sessions could not be read · " + exception.Message);
@@ -136,7 +136,7 @@ public static class InteractiveWizard
                 {
                     store.Delete(saved.UserId);
                 }
-                catch (Win32Exception)
+                catch (Exception storeException) when (storeException is Win32Exception or InvalidOperationException or InvalidDataException)
                 {
                 }
                 screen.SetNotice(saved.DisplayName + " session expired · " + exception.Message);
@@ -212,7 +212,7 @@ public static class InteractiveWizard
         {
             store.Save(session);
         }
-        catch (Win32Exception exception)
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or InvalidDataException)
         {
             screen.SetNotice("Signed in, but the session could not be saved · " + exception.Message);
         }

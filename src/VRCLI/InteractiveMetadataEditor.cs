@@ -80,9 +80,7 @@ public static class InteractiveMetadataEditor
             [
                 ("Account", user.DisplayName),
                 ("Updates", savedUpdates.ToString(CultureInfo.InvariantCulture)),
-                ("Session", OperatingSystem.IsWindows()
-                    ? "Saved in Windows Credential Manager"
-                    : "Kept only for this process")
+                ("Session", "Saved in " + VrchatSessionStore.StorageDescription)
             ]);
             await Task.Delay(500, cancellationToken);
             return ExitCodes.Success;
@@ -111,7 +109,7 @@ public static class InteractiveMetadataEditor
         {
             savedSessions = store.List();
         }
-        catch (Win32Exception exception)
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or InvalidDataException)
         {
             savedSessions = [];
             screen.SetNotice("Saved sessions could not be read · " + exception.Message);
@@ -150,7 +148,7 @@ public static class InteractiveMetadataEditor
                 {
                     store.Delete(saved.UserId);
                 }
-                catch (Win32Exception)
+                catch (Exception storeException) when (storeException is Win32Exception or InvalidOperationException or InvalidDataException)
                 {
                 }
                 screen.SetNotice(saved.DisplayName + " session expired · " + exception.Message);
@@ -220,7 +218,7 @@ public static class InteractiveMetadataEditor
         {
             store.Save(session);
         }
-        catch (Win32Exception exception)
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or InvalidDataException)
         {
             screen.SetNotice("Signed in, but the session could not be saved · " + exception.Message);
         }
