@@ -150,6 +150,30 @@ public sealed class VrchatApiClientTests
         Assert.Contains("version 8", verification.Message);
     }
 
+    [Fact]
+    public async Task UpdatesAvatarMetadataWithoutOpeningUnity()
+    {
+        AvatarRecordingHandler handler = new();
+        StringWriter output = new();
+        MetadataApplication application = new(output, new StringWriter(), () => new VrchatApiClient(handler));
+        DeployOptions options = Options() with
+        {
+            BlueprintId = "avtr_example",
+            Title = "After avatar",
+            TerminalMode = TerminalMode.Json
+        };
+
+        MetadataExecutionResult result = await application.RunAsync(options);
+
+        Assert.Equal(ExitCodes.Success, result.ExitCode);
+        Assert.Equal("Avatar", result.Result.ContentType);
+        Assert.Equal(7, result.Result.PreviousVersion);
+        Assert.Equal(8, result.Result.ServerVersion);
+        Assert.Contains(handler.Requests, request =>
+            request.Method == HttpMethod.Put && request.Path == "/api/1/avatars/avtr_example" &&
+            request.Body.Contains("After avatar"));
+    }
+
     private static WorldMetadataSnapshot World(string title, int capacity, int recommended) => new(
         "wrld_example",
         "usr_owner",
@@ -289,6 +313,40 @@ public sealed class VrchatApiClientTests
               ]
             }
             """));
+    }
+
+    private sealed class AvatarRecordingHandler : HttpMessageHandler
+    {
+        public List<(HttpMethod Method, string Path, string Body)> Requests { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            string body = request.Content == null
+                ? string.Empty
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            Requests.Add((request.Method, request.RequestUri!.AbsolutePath, body));
+            string response = request.RequestUri.AbsolutePath switch
+            {
+                "/api/1/auth/user" => "{\"id\":\"usr_owner\",\"displayName\":\"Owner\"}",
+                "/api/1/avatars/avtr_example" when request.Method == HttpMethod.Get => AvatarJson("Before avatar", 7),
+                "/api/1/avatars/avtr_example" => AvatarJson("After avatar", 8),
+                _ => throw new InvalidOperationException("Unexpected request: " + request.RequestUri)
+            };
+            return JsonResponse(response);
+        }
+
+        private static string AvatarJson(string title, int version) => JsonSerializer.Serialize(new
+        {
+            id = "avtr_example",
+            authorId = "usr_owner",
+            name = title,
+            description = "Description",
+            tags = new[] { "author_tag_test" },
+            imageUrl = "https://api.vrchat.cloud/api/1/file/file_example/1/file",
+            version
+        });
     }
 
     private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)

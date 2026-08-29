@@ -701,13 +701,13 @@ public sealed class DeploymentApplication(
 VRCLI commands and parameters
 
   deploy                        Build and upload project content; auto-detects World or Avatar
-  meta                          Update only an existing world's metadata
+  meta                          Update existing world or avatar metadata without Unity
   check                         Check Unity compilation and SDK readiness; auto-detects content type
   auth list                     List saved VRChat sessions without exposing tokens
   auth logout <account>         Remove one saved session; use --all to remove every session
 
   --project <directory>         Unity project directory for deploy/check; default current directory
-  --blueprint <content_id>      wrld_ or avtr_ override; deploy/check use the scene ID when omitted; meta requires wrld_
+  --blueprint <content_id>      wrld_ or avtr_ override; deploy/check use the scene ID when omitted; meta requires one
   --new                         Create a private world; deploy only
   --scene <Assets/...unity>     Scene to deploy or check; auto-detected when unambiguous
   --target <hierarchy/path>     Avatar GameObject to deploy/check when a scene contains several avatars

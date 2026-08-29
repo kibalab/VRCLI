@@ -232,9 +232,13 @@ public sealed class CommandLineParser
             if (values.ContainsKey("target"))
                 return ParseResult.Failure("--target is only valid with deploy or check.");
             if (string.IsNullOrWhiteSpace(blueprint))
-                return ParseResult.Failure("The meta command requires --blueprint <wrld_id>.");
-            if (!blueprint.StartsWith("wrld_", StringComparison.Ordinal))
-                return ParseResult.Failure("The meta command requires a world Blueprint ID beginning with 'wrld_'.");
+                return ParseResult.Failure("The meta command requires --blueprint <wrld_id-or-avtr_id>.");
+            if (!blueprint.StartsWith("wrld_", StringComparison.Ordinal) &&
+                !blueprint.StartsWith("avtr_", StringComparison.Ordinal))
+                return ParseResult.Failure("The meta command requires a Blueprint ID beginning with 'wrld_' or 'avtr_'.");
+            if (blueprint.StartsWith("avtr_", StringComparison.Ordinal) &&
+                (hasCapacity || hasRecommendedCapacity))
+                return ParseResult.Failure("--capacity and --recommended-capacity are only valid for world metadata.");
             if (!hasMetadata)
             {
                 return ParseResult.Failure(

@@ -16,6 +16,18 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
+    public void AvatarMetadataRejectsWorldCapacityOptions()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+        [
+            "meta", "--blueprint", "avtr_example", "--title", "Avatar", "--capacity", "32",
+            "--login", "owner", "--password", "password"
+        ]);
+
+        Assert.Contains("only valid for world metadata", result.Error);
+    }
+
+    [Fact]
     public void ParsesMetadataOnlyCommand()
     {
         ParseResult result = new CommandLineParser().Parse(
@@ -587,7 +599,7 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
-    public void MetaRejectsAvatarBlueprint()
+    public void MetaAcceptsAvatarBlueprint()
     {
         CommandLineParser parser = new();
         ParseResult result = parser.Parse(
@@ -599,7 +611,8 @@ public sealed class CommandLineParserTests
             "--password", "1234"
         ]);
 
-        Assert.Contains("wrld_", result.Error);
+        Assert.Null(result.Error);
+        Assert.Equal("avtr_example", result.Options!.BlueprintId);
     }
 
     [Fact]
