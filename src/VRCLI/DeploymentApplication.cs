@@ -98,7 +98,7 @@ public sealed class DeploymentApplication(
         {
             if (terminalUi != null) await terminalUi.FinishAsync(false);
             await error.WriteLineAsync("VRCLI: Cancelled.");
-            return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Authentication cancelled.", options);
+            return await WriteFailureAsync(ExitCodes.Canceled, "cancelled", "Authentication cancelled.", options);
         }
         catch (Exception exception) when (exception is VrchatApiException or HttpRequestException or TaskCanceledException)
         {
@@ -179,7 +179,7 @@ public sealed class DeploymentApplication(
             {
                 if (terminalUi != null) await terminalUi.FinishAsync(false);
                 await error.WriteLineAsync("VRCLI: Cancelled.");
-                return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Operation cancelled.", options);
+                return await WriteFailureAsync(ExitCodes.Canceled, "cancelled", "Operation cancelled.", options);
             }
         }
         else
@@ -346,7 +346,7 @@ public sealed class DeploymentApplication(
         {
             if (terminalUi != null) await terminalUi.FinishAsync(false);
             await error.WriteLineAsync("VRCLI: Cancelled.");
-            return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Operation cancelled.", options);
+            return await WriteFailureAsync(ExitCodes.Canceled, "cancelled", "Operation cancelled.", options);
         }
         catch (Exception exception)
         {

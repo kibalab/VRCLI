@@ -127,7 +127,7 @@ public sealed class MetadataApplication(
         {
             if (terminalUi != null) await terminalUi.FinishAsync(false);
             await error.WriteLineAsync("VRCLI: Cancelled.");
-            DeploymentResult cancelled = Failure(ExitCodes.TimedOut, "cancelled", "Metadata update cancelled.");
+            DeploymentResult cancelled = Failure(ExitCodes.Canceled, "cancelled", "Metadata update cancelled.");
             await output.WriteLineAsync(JsonSerializer.Serialize(cancelled, ResultJsonOptions));
             return new MetadataExecutionResult(cancelled.ExitCode, cancelled);
         }

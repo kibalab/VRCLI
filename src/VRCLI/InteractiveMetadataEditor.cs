@@ -74,7 +74,7 @@ public static class InteractiveMetadataEditor
         }
         catch (OperationCanceledException)
         {
-            return ExitCodes.Success;
+            return ExitCodes.Canceled;
         }
         catch (Exception exception) when (exception is VrchatApiException or HttpRequestException or TaskCanceledException)
         {
