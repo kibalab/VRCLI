@@ -22,6 +22,20 @@ namespace KibaLab.WorldDeployment.Editor
             ContentScene.ValidatePlatform(request.Platform);
             ContentScene.Open(scenePath);
             AvatarTarget target = await AvatarTarget.FindAsync(request);
+            try
+            {
+                return await DeployTargetAsync(request, target);
+            }
+            finally
+            {
+                target.RestoreActivation();
+            }
+        }
+
+        private static async Task<DeploymentOutcome> DeployTargetAsync(
+            DeploymentRequest request,
+            AvatarTarget target)
+        {
             string blueprint = target.Pipeline.blueprintId;
             bool created = string.IsNullOrWhiteSpace(blueprint);
             if (!created && !blueprint.StartsWith("avtr_", StringComparison.Ordinal))
@@ -84,6 +98,7 @@ namespace KibaLab.WorldDeployment.Editor
                 blueprint = reserved.ID;
                 avatar = reserved;
                 target.Pipeline.blueprintId = blueprint;
+                target.RestoreActivation();
                 EditorUtility.SetDirty(target.Pipeline);
                 EditorSceneManager.SaveOpenScenes();
                 request.UseBlueprintId(blueprint);

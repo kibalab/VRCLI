@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -15,6 +16,7 @@ namespace KibaLab.WorldDeployment.Editor
         public PipelineManager Pipeline { get; private set; }
 
         public string Selector { get; private set; }
+        private GameObject[] activatedObjects = new GameObject[0];
 
         public static async Task<AvatarTarget> FindAsync(DeploymentRequest request)
         {
@@ -73,9 +75,25 @@ namespace KibaLab.WorldDeployment.Editor
             PipelineManager selectedPipeline = RequirePipeline(selected);
             if (!string.IsNullOrWhiteSpace(request.BlueprintId)) selectedPipeline.blueprintId = request.BlueprintId;
             string selector = HierarchyPath(selected.transform);
+            GameObject[] activatedObjects = ActivateHierarchy(selected.transform);
             DeploymentLog.Phase("TARGET", "Selected avatar: " + selector +
                 (string.IsNullOrWhiteSpace(selectedPipeline.blueprintId) ? " (new avatar)" : " (" + selectedPipeline.blueprintId + ")"));
-            return new AvatarTarget { GameObject = selected.gameObject, Pipeline = selectedPipeline, Selector = selector };
+            return new AvatarTarget
+            {
+                GameObject = selected.gameObject,
+                Pipeline = selectedPipeline,
+                Selector = selector,
+                activatedObjects = activatedObjects
+            };
+        }
+
+        public void RestoreActivation()
+        {
+            foreach (GameObject activatedObject in activatedObjects)
+            {
+                if (activatedObject != null) activatedObject.SetActive(false);
+            }
+            activatedObjects = new GameObject[0];
         }
 
         private static async Task<VRC_AvatarDescriptor> RequestSelectionAsync(
@@ -167,6 +185,21 @@ namespace KibaLab.WorldDeployment.Editor
                 path = transform.name + "/" + path;
             }
             return path;
+        }
+
+        private static GameObject[] ActivateHierarchy(Transform transform)
+        {
+            List<GameObject> activated = new List<GameObject>();
+            while (transform != null)
+            {
+                if (!transform.gameObject.activeSelf)
+                {
+                    transform.gameObject.SetActive(true);
+                    activated.Add(transform.gameObject);
+                }
+                transform = transform.parent;
+            }
+            return activated.ToArray();
         }
 
         private static void EnsureUniqueSelectors(ContentTarget[] candidates)

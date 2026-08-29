@@ -37,36 +37,43 @@ namespace KibaLab.WorldDeployment.Editor
                 return report;
             }
 
-            string blueprint = target.Pipeline.blueprintId;
-            report.Blueprint = string.IsNullOrWhiteSpace(blueprint) ? null : blueprint;
-            if (string.IsNullOrWhiteSpace(blueprint))
+            try
             {
-                report.AddWarning("No Avatar Blueprint ID is assigned; this will create a new private avatar and requires --title, --thumbnail, and --yes during deploy.");
-            }
-            else if (!blueprint.StartsWith("avtr_", StringComparison.Ordinal))
-            {
-                report.AddError("The selected PipelineManager contains an invalid avatar Blueprint ID: " + blueprint);
-            }
-            else
-            {
-                DeploymentLog.Phase("AVATAR", "Checking the existing avatar record and authenticated ownership.");
-                await AvatarMetadata.FetchOwnedAsync(blueprint);
-                if (await OwnershipAgreement.CheckAsync(blueprint))
-                    DeploymentLog.Info("AVATAR", "Content ownership consent is already recorded.");
+                string blueprint = target.Pipeline.blueprintId;
+                report.Blueprint = string.IsNullOrWhiteSpace(blueprint) ? null : blueprint;
+                if (string.IsNullOrWhiteSpace(blueprint))
+                {
+                    report.AddWarning("No Avatar Blueprint ID is assigned; this will create a new private avatar and requires --title, --thumbnail, and --yes during deploy.");
+                }
+                else if (!blueprint.StartsWith("avtr_", StringComparison.Ordinal))
+                {
+                    report.AddError("The selected PipelineManager contains an invalid avatar Blueprint ID: " + blueprint);
+                }
                 else
-                    report.AddWarning("Content ownership consent is not recorded; deploy with --yes before uploading.");
-            }
+                {
+                    DeploymentLog.Phase("AVATAR", "Checking the existing avatar record and authenticated ownership.");
+                    await AvatarMetadata.FetchOwnedAsync(blueprint);
+                    if (await OwnershipAgreement.CheckAsync(blueprint))
+                        DeploymentLog.Info("AVATAR", "Content ownership consent is already recorded.");
+                    else
+                        report.AddWarning("Content ownership consent is not recorded; deploy with --yes before uploading.");
+                }
 
-            DeploymentLog.Phase("SDK", "Running VRChat avatar SDK validation without building or uploading.");
-            IVRCSdkAvatarBuilderApi builder = await AvatarDeployer.GetBuilderAsync();
-            builder.SelectAvatar(target.GameObject);
-            string invalidReason;
-            if (!builder.IsValidBuilder(out invalidReason))
-                report.AddError(string.IsNullOrWhiteSpace(invalidReason) ? "The VRChat SDK avatar builder rejected the selected avatar." : invalidReason.Replace('\n', ' '));
-            else
+                DeploymentLog.Phase("SDK", "Running VRChat avatar SDK validation without building or uploading.");
+                IVRCSdkAvatarBuilderApi builder = await AvatarDeployer.GetBuilderAsync();
+                builder.SelectAvatar(target.GameObject);
+                string invalidReason;
+                if (!builder.IsValidBuilder(out invalidReason))
+                    report.AddError(string.IsNullOrWhiteSpace(invalidReason) ? "The VRChat SDK avatar builder rejected the selected avatar." : invalidReason.Replace('\n', ' '));
+                else
+                {
+                    try { SdkDiagnostics.Collect(builder, report); }
+                    catch (Exception exception) { report.AddError("VRChat SDK validation could not complete: " + exception.GetBaseException().Message); }
+                }
+            }
+            finally
             {
-                try { SdkDiagnostics.Collect(builder, report); }
-                catch (Exception exception) { report.AddError("VRChat SDK validation could not complete: " + exception.GetBaseException().Message); }
+                target.RestoreActivation();
             }
 
             DeploymentLog.Phase("CHECK", "VRChat avatar SDK preflight diagnostics collected.");
