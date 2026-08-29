@@ -26,7 +26,7 @@ VRCLI は、ターミナルや CI ランナーから VRChat ワールドとア�
 - VRCLI のビルドに必要な .NET 8 SDK
 - ワールドまたはアバターをアップロードできる VRChat アカウント
 
-Windows ではテスト済みです。macOS 対応は実験段階です。Apple Silicon と Intel Mac 向けに CLI をビルドできますが、Mac 上でのデプロイ全体はまだ検証していません。Unity の自動検出は現在 Windows のみ対応しているため、`UNITY_EDITOR_PATH` または `--unity` を使用してください。
+Windows はエンドツーエンドで検証済みです。macOS は Apple Silicon／Intel ビルドと Unity Hub の自動検出に対応していますが、Mac 上での実アップロード全体はまだ未検証です。Unity が標準の Hub ディレクトリ外にある場合だけ `UNITY_EDITOR_PATH` または `--unity` を使用してください。
 
 ## インストール
 
@@ -59,11 +59,11 @@ Windows では `VRCLI.exe`、macOS では `./VRCLI` を実行します。
 `Directory.Build.props` の `VersionPrefix` を変更してコミットし、一致する `vX.Y.Z` タグをプッシュします。
 
 ```bash
-git tag -a v0.18.0 -m "VRCLI v0.18.0"
-git push origin v0.18.0
+git tag -a v0.19.0 -m "VRCLI v0.19.0"
+git push origin v0.19.0
 ```
 
-GitHub Actions がタグ時点のコミットをテストし、自己完結型の Windows／macOS アーカイブと SHA-256 チェックサムを GitHub Release に公開します。タグが `VersionPrefix` と一致しない場合、リリースを作成せず失敗します。
+GitHub Actions は Windows、Apple Silicon、Intel ランナーでタグのコミットをネイティブテストします。リリースには自己完結型 CLI、VPM パッケージ、SHA-256、SPDX SBOM、GitHub アーティファクト証明が含まれ、GitHub Pages の VPM リストも更新されます。タグと 2 つのプロジェクトバージョンが異なる場合は公開前に失敗します。
 
 ## 対話型で使う
 
@@ -79,7 +79,9 @@ vrcli check
 - `meta`: Unity を開かずに既存のメタデータを編集し、ログインセッションを維持します。
 - `check`: プロジェクト種別を判定し、ビルドやアップロードを行わずコンパイルと SDK アップロードの問題を報告します。
 
-TUI でプロジェクト、シーン、アカウント、必要な認証コードを入力できます。Windows では認証済みセッションを Windows 資格情報マネージャーに保存し、次回から保存済みアカウントまたは新しいアカウントを選択できます。
+TUI でプロジェクト、シーン、アカウント、必要な認証コードを入力できます。認証済みセッションは Windows 資格情報マネージャーまたは macOS Keychain に保存され、次回から保存済みアカウントまたは新しいアカウントを選択できます。
+
+通常の CLI でも、`--password` なしで `--login <保存済みアカウント>` を指定すると保存セッションを利用できます。`vrcli auth list`、`vrcli auth logout <account>`、`vrcli auth logout --all` で確認・削除できます。`--password` を指定した場合は常に新規ログインします。
 
 ## CI またはスクリプトで使う
 
@@ -105,6 +107,8 @@ vrcli deploy `
 ```
 
 ワンタイムコードは `--two-factor-code <現在のコード>` とともに `--two-factor-method totp`、`emailOtp`、または `otp` を指定します。コマンドラインのパスワードはシェル履歴やプロセス一覧に残る可能性があるため、CI では環境変数の方が安全です。
+
+ビルド成功後にアップロードまたはサーバー検証が失敗した場合、JSON の `Artifact.RecoveryFile` に復旧マニフェストが返ります。通常のログイン設定と `--resume <recovery.json>` を指定すると、再ビルドせず保存済みバンドルを再送できます。対象プラットフォームのバージョンをサーバーで確認した後にだけ復旧ファイルを削除します。
 
 ### 既存ワールドをデプロイ
 
@@ -186,7 +190,7 @@ jobs:
         platform: [StandaloneWindows64, Android]
     runs-on: [self-hosted, windows, x64, vrchat-unity]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - shell: pwsh
         env:
           VRCLI_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
@@ -214,9 +218,20 @@ jobs:
   "ContentType": "World",
   "Platform": "StandaloneWindows64",
   "Stage": "complete",
-  "Message": "World build and upload completed."
+  "Message": "World build and upload completed.",
+  "Verified": true,
+  "VrcliVersion": "0.19.0",
+  "UnityVersion": "2022.3.22f1",
+  "SdkVersion": "3.10.1",
+  "DurationMs": 120000,
+  "Artifact": {
+    "Size": 12345678,
+    "Sha256": "..."
+  }
 }
 ```
+
+デプロイ結果にはフェーズ別時間と以前／サーバー上のコンテンツバージョンも含まれ、CI ログだけでビルド・アップロード・検証対象を確認できます。
 
 アバター選択が曖昧な場合、非対話実行の失敗結果には各候補の `Name`、Hierarchy `Selector`、任意の `Blueprint` を含む `Targets` が返ります。選ぶ `Selector` を `--target` に指定してください。
 

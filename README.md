@@ -26,7 +26,7 @@ You need:
 - .NET 8 SDK to build VRCLI
 - A VRChat account that can upload worlds or avatars
 
-Windows is tested. macOS support is experimental: the CLI builds for Apple silicon and Intel Macs, but has not yet completed an end-to-end deployment test on a Mac. Set `UNITY_EDITOR_PATH` or use `--unity` because automatic Unity discovery currently covers Windows only.
+Windows is tested end to end. macOS builds and Unity Hub discovery support Apple silicon and Intel Macs, but a complete Mac upload has not yet been verified. Use `UNITY_EDITOR_PATH` or `--unity` only when Unity is installed outside the standard Hub directories.
 
 ## Install
 
@@ -59,11 +59,11 @@ Run `VRCLI.exe` on Windows or `./VRCLI` on macOS.
 Set `VersionPrefix` in `Directory.Build.props`, commit it, then push the matching `vX.Y.Z` tag:
 
 ```bash
-git tag -a v0.18.0 -m "VRCLI v0.18.0"
-git push origin v0.18.0
+git tag -a v0.19.0 -m "VRCLI v0.19.0"
+git push origin v0.19.0
 ```
 
-GitHub Actions tests the tagged commit and publishes self-contained Windows and macOS archives with SHA-256 checksums to a GitHub Release. A tag that does not match `VersionPrefix` fails without creating a release.
+GitHub Actions tests the tagged commit on native Windows, Apple silicon, and Intel runners. The release contains self-contained CLI archives, the VPM package, SHA-256 checksums, an SPDX SBOM, and a GitHub artifact attestation. It also refreshes the GitHub Pages VPM listing. A tag that differs from either project version fails before publication.
 
 ## Use it interactively
 
@@ -79,7 +79,9 @@ vrcli check
 - `meta` edits existing metadata without opening Unity and keeps the login session open.
 - `check` detects the project type and reports compilation and SDK upload blockers without building or uploading.
 
-The TUI asks for the project, scene, account, and any missing verification code. On Windows, verified sessions are stored in Windows Credential Manager; later runs let you choose a saved account or sign in with another one.
+The TUI asks for the project, scene, account, and any missing verification code. Verified sessions are stored in Windows Credential Manager or macOS Keychain; later runs let you choose a saved account or sign in with another one.
+
+Saved sessions also work in plain CLI mode. Pass `--login <saved-account>` without `--password`, or inspect and remove sessions with `vrcli auth list`, `vrcli auth logout <account>`, and `vrcli auth logout --all`. Supplying `--password` always performs a fresh login.
 
 ## Use it in CI or scripts
 
@@ -105,6 +107,8 @@ vrcli deploy `
 ```
 
 Use `--two-factor-code <current-code>` together with `--two-factor-method totp`, `emailOtp`, or `otp`. Command-line passwords may remain in shell history or process listings, so environment variables are safer for CI.
+
+If a build succeeds but upload or server verification fails, the JSON result includes `Artifact.RecoveryFile`. Retry the preserved bundle without rebuilding by passing `--resume <recovery.json>` together with the normal login options. Recovery files are removed only after the server confirms the expected platform version.
 
 ### Deploy an existing world
 
@@ -186,7 +190,7 @@ jobs:
         platform: [StandaloneWindows64, Android]
     runs-on: [self-hosted, windows, x64, vrchat-unity]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - shell: pwsh
         env:
           VRCLI_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
@@ -214,9 +218,20 @@ Use `--json` to write exactly one result object to stdout while diagnostics go t
   "ContentType": "World",
   "Platform": "StandaloneWindows64",
   "Stage": "complete",
-  "Message": "World build and upload completed."
+  "Message": "World build and upload completed.",
+  "Verified": true,
+  "VrcliVersion": "0.19.0",
+  "UnityVersion": "2022.3.22f1",
+  "SdkVersion": "3.10.1",
+  "DurationMs": 120000,
+  "Artifact": {
+    "Size": 12345678,
+    "Sha256": "..."
+  }
 }
 ```
+
+Deployment results also include per-phase timings and previous/server content versions, making a CI log sufficient to identify what was built, uploaded, and verified.
 
 When avatar selection is ambiguous, a non-interactive failure includes `Targets` entries with each candidate's `Name`, Hierarchy `Selector`, and optional `Blueprint`; pass one `Selector` back through `--target`.
 
