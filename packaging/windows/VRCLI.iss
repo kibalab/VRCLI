@@ -59,16 +59,33 @@ begin
   Result := Lowercase(RemoveBackslashUnlessRoot(Trim(Value)));
 end;
 
+function TakePathEntry(var Remaining: string): string;
+var
+  Separator: Integer;
+begin
+  Separator := Pos(';', Remaining);
+  if Separator = 0 then
+  begin
+    Result := Remaining;
+    Remaining := '';
+  end
+  else
+  begin
+    Result := Copy(Remaining, 1, Separator - 1);
+    Delete(Remaining, 1, Separator);
+  end;
+end;
+
 function PathContains(PathValue, Entry: string): Boolean;
 var
-  Entries: TArrayOfString;
-  Index: Integer;
+  Remaining, Candidate: string;
 begin
   Result := False;
-  Entries := SplitString(PathValue, ';');
-  for Index := 0 to GetArrayLength(Entries) - 1 do
+  Remaining := PathValue;
+  while Remaining <> '' do
   begin
-    if NormalizedPath(Entries[Index]) = NormalizedPath(Entry) then
+    Candidate := TakePathEntry(Remaining);
+    if NormalizedPath(Candidate) = NormalizedPath(Entry) then
     begin
       Result := True;
       Exit;
@@ -94,9 +111,7 @@ end;
 
 procedure RemoveFromUserPath(Entry: string);
 var
-  PathValue, NewValue: string;
-  Entries: TArrayOfString;
-  Index: Integer;
+  PathValue, NewValue, Remaining, Candidate: string;
   Marker: Cardinal;
 begin
   if not RegQueryDWordValue(HKCU, ProductKey, 'PathAdded', Marker) or (Marker <> 1) then
@@ -104,15 +119,16 @@ begin
   if not RegQueryStringValue(HKCU, EnvironmentKey, 'Path', PathValue) then
     Exit;
 
-  Entries := SplitString(PathValue, ';');
+  Remaining := PathValue;
   NewValue := '';
-  for Index := 0 to GetArrayLength(Entries) - 1 do
+  while Remaining <> '' do
   begin
-    if (Entries[Index] <> '') and (NormalizedPath(Entries[Index]) <> NormalizedPath(Entry)) then
+    Candidate := TakePathEntry(Remaining);
+    if (Candidate <> '') and (NormalizedPath(Candidate) <> NormalizedPath(Entry)) then
     begin
       if NewValue <> '' then
         NewValue := NewValue + ';';
-      NewValue := NewValue + Entries[Index];
+      NewValue := NewValue + Candidate;
     end;
   end;
 
