@@ -30,14 +30,29 @@ VRCLI は、ターミナルや CI ランナーから VRChat ワールドとア�
 - VRChat Worlds SDK または Avatars SDK 3.9.0 以降を使用する VCC/VPM プロジェクト
 - `ProjectSettings/ProjectVersion.txt` に記録されたバージョンの Unity
 - `vpm` コマンドとして利用できる [VPM CLI](https://vcc.docs.vrchat.com/vpm/cli/)
-- VRCLI のビルドに必要な .NET 8 SDK
+- VRCLI をソースからビルドする場合のみ必要な .NET 8 SDK
 - ワールドまたはアバターをアップロードできる VRChat アカウント
 
 Windows はエンドツーエンドで検証済みです。macOS は Apple Silicon／Intel ビルドと Unity Hub の自動検出に対応していますが、Mac 上での実アップロード全体はまだ未検証です。Unity が標準の Hub ディレクトリ外にある場合だけ `UNITY_EDITOR_PATH` または `--unity` を使用してください。
 
 ## インストール
 
-リポジトリをクローンし、スタンドアロン実行ファイルをビルドします。
+[GitHub Releases の最新版](https://github.com/kibalab/VRCLI/releases/latest)から、すぐに実行できるアーカイブをダウンロードしてください。
+
+- Windows x64: `VRCLI-x.y.z-win-x64.zip`
+- Apple Silicon Mac: `VRCLI-x.y.z-osx-arm64.tar.gz`
+- Intel Mac: `VRCLI-x.y.z-osx-x64.tar.gz`
+
+展開後、Windows では `VRCLI.exe`、macOS では `./VRCLI` を実行します。macOS では先に実行権限を付与してください。
+
+```bash
+chmod +x VRCLI
+./VRCLI
+```
+
+### ソースからビルド
+
+.NET 8 SDK をインストールし、リポジトリをクローンして対象プラットフォーム向けにビルドします。
 
 Windows:
 
@@ -48,7 +63,7 @@ dotnet publish src/VRCLI/VRCLI.csproj -c Release -r win-x64 `
   --self-contained true -o artifacts/win-x64
 ```
 
-Apple Silicon Mac（Intel は `osx-x64`）:
+Apple Silicon Mac（Intel は `osx-x64` を使用）:
 
 ```bash
 git clone https://github.com/kibalab/VRCLI.git
@@ -58,8 +73,6 @@ dotnet publish src/VRCLI/VRCLI.csproj -c Release -r osx-arm64 \
 
 export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Contents/MacOS/Unity"
 ```
-
-Windows では `VRCLI.exe`、macOS では `./VRCLI` を実行します。
 
 ## 対話型で使う
 
