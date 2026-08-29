@@ -61,17 +61,6 @@ export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Con
 
 Windows では `VRCLI.exe`、macOS では `./VRCLI` を実行します。
 
-## リリース
-
-`Directory.Build.props` の `VersionPrefix` を変更してコミットし、一致する `vX.Y.Z` タグをプッシュします。
-
-```bash
-git tag -a v0.19.0 -m "VRCLI v0.19.0"
-git push origin v0.19.0
-```
-
-GitHub Actions は Windows、Apple Silicon、Intel ランナーでタグのコミットをネイティブテストします。リリースには自己完結型 CLI、VPM パッケージ、SHA-256、SPDX SBOM、GitHub アーティファクト証明が含まれ、GitHub Pages の VPM リストも更新されます。タグと 2 つのプロジェクトバージョンが異なる場合は公開前に失敗します。
-
 ## 対話型で使う
 
 ローカルターミナルで目的のコマンドを実行してください。

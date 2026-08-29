@@ -61,17 +61,6 @@ export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Con
 
 Run `VRCLI.exe` on Windows or `./VRCLI` on macOS.
 
-## Release
-
-Set `VersionPrefix` in `Directory.Build.props`, commit it, then push the matching `vX.Y.Z` tag:
-
-```bash
-git tag -a v0.19.0 -m "VRCLI v0.19.0"
-git push origin v0.19.0
-```
-
-GitHub Actions tests the tagged commit on native Windows, Apple silicon, and Intel runners. The release contains self-contained CLI archives, the VPM package, SHA-256 checksums, an SPDX SBOM, and a GitHub artifact attestation. It also refreshes the GitHub Pages VPM listing. A tag that differs from either project version fails before publication.
-
 ## Use it interactively
 
 Run one of these commands in a local terminal:
