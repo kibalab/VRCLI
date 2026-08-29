@@ -133,10 +133,13 @@ jobs:
 
           chmod +x artifacts/native/VRCLI-osx-x64/VRCLI
           chmod +x artifacts/native/VRCLI-osx-arm64/VRCLI
+          cp scripts/install-vrcli.ps1 artifacts/native/VRCLI-win-x64/
+          cp scripts/uninstall-vrcli.ps1 artifacts/native/VRCLI-win-x64/
           (cd artifacts/native/VRCLI-win-x64 && zip -q -r "../../packages/VRCLI-$VERSION-win-x64.zip" .)
           tar -C artifacts/native/VRCLI-osx-x64 -czf "artifacts/packages/VRCLI-$VERSION-osx-x64.tar.gz" .
           tar -C artifacts/native/VRCLI-osx-arm64 -czf "artifacts/packages/VRCLI-$VERSION-osx-arm64.tar.gz" .
           (cd Packages/com.kibalab.vrcli && zip -q -r "$GITHUB_WORKSPACE/artifacts/packages/com.kibalab.vrcli-$VERSION.zip" .)
+          cp scripts/install-vrcli.ps1 artifacts/packages/install-vrcli.ps1
 
       - name: Generate SPDX SBOM
         shell: bash
