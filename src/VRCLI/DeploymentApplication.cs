@@ -483,14 +483,6 @@ public sealed class DeploymentApplication(
         startInfo.Environment[DeploymentEnvironment.Operation] = options.Operation.ToString();
         startInfo.Environment[DeploymentEnvironment.ContentType] = contentType.ToString();
         startInfo.Environment[DeploymentEnvironment.IsNew] = options.IsNew ? "true" : "false";
-        startInfo.Environment[DeploymentEnvironment.Username] = options.Username;
-        startInfo.Environment[DeploymentEnvironment.Password] = options.Password;
-        if (!string.IsNullOrWhiteSpace(options.TwoFactorCode))
-            startInfo.Environment[DeploymentEnvironment.TwoFactorCode] = options.TwoFactorCode;
-        if (!string.IsNullOrWhiteSpace(options.TwoFactorMethod))
-            startInfo.Environment[DeploymentEnvironment.TwoFactorMethod] = options.TwoFactorMethod;
-        if (!string.IsNullOrWhiteSpace(options.TotpSecret))
-            startInfo.Environment[DeploymentEnvironment.TotpSecret] = options.TotpSecret;
         startInfo.Environment[DeploymentEnvironment.AuthToken] = sessionTokens.AuthToken;
         if (!string.IsNullOrWhiteSpace(sessionTokens.TwoFactorToken))
             startInfo.Environment[DeploymentEnvironment.TwoFactorToken] = sessionTokens.TwoFactorToken;
