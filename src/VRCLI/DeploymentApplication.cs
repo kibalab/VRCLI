@@ -576,6 +576,8 @@ public sealed class DeploymentApplication(
 
     private async Task WriteResultAsync(DeploymentResult result)
     {
+        if (string.IsNullOrWhiteSpace(result.VrcliVersion))
+            result = result with { VrcliVersion = Branding.Version };
         LastResult = result;
         await output.WriteLineAsync(JsonSerializer.Serialize(result, ResultJsonOptions));
     }
@@ -643,6 +645,19 @@ public sealed record DeploymentResult(
     IReadOnlyList<string>? CompilerWarnings = null,
     IReadOnlyList<MetadataChange>? Changes = null,
     string? ContentType = null,
-    IReadOnlyList<ContentTarget>? Targets = null);
+    IReadOnlyList<ContentTarget>? Targets = null,
+    string? VrcliVersion = null,
+    string? UnityVersion = null,
+    string? SdkVersion = null,
+    long? DurationMs = null,
+    IReadOnlyList<PhaseTiming>? PhaseTimings = null,
+    BuildArtifact? Artifact = null,
+    int? PreviousVersion = null,
+    int? ServerVersion = null,
+    string? ServerUpdatedAt = null,
+    bool? Verified = null,
+    string? VerificationMessage = null);
 
 public sealed record ContentTarget(string Name, string Selector, string? Blueprint);
+public sealed record PhaseTiming(string Phase, long DurationMs);
+public sealed record BuildArtifact(string Path, long Size, string Sha256, string? RecoveryFile = null);

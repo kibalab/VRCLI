@@ -22,7 +22,7 @@ namespace KibaLab.WorldDeployment.Editor
         private static int lastUploadBucket = -1;
         private static bool uploadIncludesThumbnail;
 
-        public static async Task<string> DeployAsync(DeploymentRequest request, string scenePath)
+        public static async Task<DeploymentOutcome> DeployAsync(DeploymentRequest request, string scenePath)
         {
             DeploymentLog.Phase("PREPARE", "Preparing project and scene for the VRChat SDK builder.");
             ContentScene.ValidatePlatform(request.Platform);
@@ -153,6 +153,9 @@ namespace KibaLab.WorldDeployment.Editor
             DeploymentLog.Info("SIGNATURE", request.IsNew
                 ? "The generated signature will be stored with the new world record."
                 : "The world record will be updated with the generated signature after bundle upload.");
+            int previousVersion = request.IsNew ? 0 : world.Version;
+            BuildArtifact artifact = BuildArtifact.Capture(build.path);
+            DeploymentLog.Info("BUILD", "Bundle SHA-256: " + artifact.Sha256);
             VRCWorld uploaded;
             if (request.IsNew)
             {
@@ -202,7 +205,16 @@ namespace KibaLab.WorldDeployment.Editor
             DeploymentLog.Info("SIGNATURE", "VRChat confirmed the world-signature update.");
             DeploymentLog.Info("UPLOAD", "Server world version: " + uploaded.Version);
             DeploymentLog.Info("UPLOAD", "Server updated time: " + uploaded.UpdatedAt.ToUniversalTime().ToString("O"));
-            return uploaded.ID;
+            return new DeploymentOutcome
+            {
+                Blueprint = uploaded.ID,
+                Created = request.IsNew,
+                Message = request.IsNew ? "World created, built, and uploaded." : "World build and upload completed.",
+                PreviousVersion = previousVersion,
+                ServerVersion = uploaded.Version,
+                ServerUpdatedAt = uploaded.UpdatedAt.ToUniversalTime().ToString("O"),
+                Artifact = artifact
+            };
         }
 
         private static void SynchronizeBuilderBlueprint(IVRCSdkWorldBuilderApi builder, string blueprintId)

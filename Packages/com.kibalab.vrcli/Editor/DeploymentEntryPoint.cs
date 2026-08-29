@@ -69,7 +69,7 @@ namespace KibaLab.WorldDeployment.Editor
                 }
 
                 DeploymentOutcome outcome = await handler.DeployAsync(request, scenePath);
-                DeploymentResult.Write(request.ResultFile, true, 0, outcome.Blueprint, outcome.Created, request.Platform, request.ContentType.ToString(), "complete", outcome.Message);
+                DeploymentResult.Write(request.ResultFile, true, 0, outcome.Blueprint, outcome.Created, request.Platform, request.ContentType.ToString(), "complete", outcome.Message, outcome: outcome);
                 DeploymentLog.Phase("COMPLETE", "Deployment completed successfully for " + outcome.Blueprint + ".");
                 EditorApplication.Exit(0);
             }

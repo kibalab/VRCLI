@@ -38,6 +38,7 @@ namespace KibaLab.WorldDeployment.Editor
         {
             string blueprint = target.Pipeline.blueprintId;
             bool created = string.IsNullOrWhiteSpace(blueprint);
+            int previousVersion = 0;
             if (!created && !blueprint.StartsWith("avtr_", StringComparison.Ordinal))
                 throw new ArgumentException("The selected avatar Blueprint ID must begin with 'avtr_': " + blueprint);
             if (created && !request.OwnershipAccepted)
@@ -57,6 +58,7 @@ namespace KibaLab.WorldDeployment.Editor
                 request.UseBlueprintId(blueprint);
                 DeploymentLog.Phase("AVATAR", "Fetching the existing VRChat avatar record.");
                 avatar = await AvatarMetadata.FetchOwnedAsync(blueprint);
+                previousVersion = avatar.Version;
                 AvatarMetadata.Apply(ref avatar, request);
                 await OwnershipAgreement.EnsureAsync(blueprint, request.OwnershipAccepted);
                 DeploymentLog.Info("AVATAR", "Avatar: " + avatar.Name + " (version " + avatar.Version + ")");
@@ -85,8 +87,10 @@ namespace KibaLab.WorldDeployment.Editor
             }
             if (string.IsNullOrWhiteSpace(bundlePath) || !File.Exists(bundlePath))
                 throw new BuilderException("The SDK did not return a valid avatar bundle path.");
+            BuildArtifact artifact = BuildArtifact.Capture(bundlePath);
             DeploymentLog.Info("BUILD", "Bundle ready: " + bundlePath);
             DeploymentLog.Info("BUILD", "Bundle size: " + DeploymentLog.FormatBytes(new FileInfo(bundlePath).Length));
+            DeploymentLog.Info("BUILD", "Bundle SHA-256: " + artifact.Sha256);
             DeploymentLog.Phase("SIGNATURE", "Avatar bundles do not use the world bundle-signature step; continuing with SDK upload.");
 
             ResetUploadProgress();
@@ -134,7 +138,10 @@ namespace KibaLab.WorldDeployment.Editor
             {
                 Blueprint = avatar.ID,
                 Created = created,
-                Message = created ? "Avatar created, built, and uploaded." : "Avatar build and upload completed."
+                Message = created ? "Avatar created, built, and uploaded." : "Avatar build and upload completed.",
+                PreviousVersion = previousVersion,
+                ServerVersion = avatar.Version,
+                Artifact = artifact
             };
         }
 

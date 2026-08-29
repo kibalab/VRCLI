@@ -66,4 +66,34 @@ public sealed class DeploymentResultTests
         Assert.Contains("\"Blueprint\":\"avtr_existing\"", json);
         Assert.Contains("\"Selector\":\"Avatars/Fallback\"", json);
     }
+
+    [Fact]
+    public void SerializesBuildProvenanceAndPhaseTimings()
+    {
+        DeploymentResult result = new(
+            true,
+            ExitCodes.Success,
+            "wrld_example",
+            false,
+            "StandaloneWindows64",
+            "complete",
+            "Uploaded.",
+            ContentType: "World",
+            VrcliVersion: "0.19.0",
+            UnityVersion: "2022.3.22f1",
+            SdkVersion: "3.10.1",
+            DurationMs: 1250,
+            PhaseTimings: [new PhaseTiming("BUILD", 900)],
+            Artifact: new BuildArtifact("bundle.vrcw", 1234, "abc123"),
+            PreviousVersion: 7,
+            ServerVersion: 8);
+
+        string json = JsonSerializer.Serialize(result);
+
+        Assert.Contains("\"VrcliVersion\":\"0.19.0\"", json);
+        Assert.Contains("\"Phase\":\"BUILD\"", json);
+        Assert.Contains("\"Sha256\":\"abc123\"", json);
+        Assert.Contains("\"PreviousVersion\":7", json);
+        Assert.Contains("\"ServerVersion\":8", json);
+    }
 }
