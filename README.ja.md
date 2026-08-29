@@ -218,7 +218,7 @@ jobs:
   "Stage": "complete",
   "Message": "World build and upload completed.",
   "Verified": true,
-  "VrcliVersion": "0.19.0",
+  "VrcliVersion": "0.20.0",
   "UnityVersion": "2022.3.22f1",
   "SdkVersion": "3.10.1",
   "DurationMs": 120000,
