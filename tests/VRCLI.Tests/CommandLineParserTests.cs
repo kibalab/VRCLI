@@ -20,8 +20,17 @@ public sealed class CommandLineParserTests
     {
         ParseResult result = new CommandLineParser().Parse(
         [
-            "meta", "--blueprint", "avtr_example", "--title", "Avatar", "--capacity", "32",
-            "--login", "owner", "--password", "password"
+            "meta",
+            "--blueprint",
+            "avtr_example",
+            "--title",
+            "Avatar",
+            "--capacity",
+            "32",
+            "--login",
+            "owner",
+            "--password",
+            "password"
         ]);
 
         Assert.Contains("only valid for world metadata", result.Error);
@@ -33,11 +42,16 @@ public sealed class CommandLineParserTests
         ParseResult result = new CommandLineParser().Parse(
         [
             "meta",
-            "--blueprint", "wrld_example",
-            "--title", "Updated title",
-            "--capacity", "64",
-            "--login", "kibalab",
-            "--password", "secret",
+            "--blueprint",
+            "wrld_example",
+            "--title",
+            "Updated title",
+            "--capacity",
+            "64",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret",
             "--plain"
         ]);
 
@@ -55,9 +69,12 @@ public sealed class CommandLineParserTests
         ParseResult result = new CommandLineParser().Parse(
         [
             "meta",
-            "--blueprint", "wrld_example",
-            "--login", "kibalab",
-            "--password", "secret"
+            "--blueprint",
+            "wrld_example",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret"
         ]);
 
         Assert.Contains("at least one metadata option", result.Error);
@@ -69,10 +86,14 @@ public sealed class CommandLineParserTests
         ParseResult result = new CommandLineParser().Parse(
         [
             "check",
-            "--scene", "Assets/Scenes/Main.unity",
-            "--platform", "Android",
-            "--login", "kibalab",
-            "--password", "secret",
+            "--scene",
+            "Assets/Scenes/Main.unity",
+            "--platform",
+            "Android",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret",
             "--plain"
         ]);
 
@@ -88,11 +109,16 @@ public sealed class CommandLineParserTests
         ParseResult result = new CommandLineParser().Parse(
         [
             "deploy",
-            "--project", ".",
-            "--scene", "Assets/Scenes/Main.unity",
-            "--platform", "StandaloneWindows64",
-            "--login", "kibalab",
-            "--password", "secret",
+            "--project",
+            ".",
+            "--scene",
+            "Assets/Scenes/Main.unity",
+            "--platform",
+            "StandaloneWindows64",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret",
             "--plain"
         ]);
 
@@ -108,9 +134,12 @@ public sealed class CommandLineParserTests
         ParseResult result = new CommandLineParser().Parse(
         [
             "deploy",
-            "--target", "Avatars/KIBA_",
-            "--login", "kibalab",
-            "--password", "secret",
+            "--target",
+            "Avatars/KIBA_",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret",
             "--plain"
         ]);
 
@@ -124,11 +153,16 @@ public sealed class CommandLineParserTests
         ParseResult result = new CommandLineParser().Parse(
         [
             "meta",
-            "--blueprint", "wrld_example",
-            "--target", "Avatars/KIBA_",
-            "--title", "Changed",
-            "--login", "kibalab",
-            "--password", "secret"
+            "--blueprint",
+            "wrld_example",
+            "--target",
+            "Avatars/KIBA_",
+            "--title",
+            "Changed",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret"
         ]);
 
         Assert.Contains("deploy or check", result.Error);
@@ -140,9 +174,12 @@ public sealed class CommandLineParserTests
         ParseResult result = new CommandLineParser().Parse(
         [
             "check",
-            "--title", "Should not change",
-            "--login", "kibalab",
-            "--password", "secret"
+            "--title",
+            "Should not change",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret"
         ]);
 
         Assert.Contains("not valid with the check command", result.Error);
@@ -605,10 +642,14 @@ public sealed class CommandLineParserTests
         ParseResult result = parser.Parse(
         [
             "meta",
-            "--blueprint", "avtr_example",
-            "--title", "Name",
-            "--login", "kibalab",
-            "--password", "1234"
+            "--blueprint",
+            "avtr_example",
+            "--title",
+            "Name",
+            "--login",
+            "kibalab",
+            "--password",
+            "1234"
         ]);
 
         Assert.Null(result.Error);

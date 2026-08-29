@@ -239,111 +239,111 @@ internal sealed class WizardTerminalScreen : IDisposable
         {
             if (!entered) return;
             (int width, int height) = Size();
-        bool resized = lastSize.HasValue && lastSize.Value != (width, height);
-        lastSize = (width, height);
-        if (resized)
-        {
-            Console.Write("\x1b[2J\x1b[H");
-            previousFrame.Clear();
-            force = true;
-        }
-        List<string> frame = [];
-        string routeText = width >= 64
-            ? string.Join(
-                Paint("  →  ", "90"),
-                route.Select((label, index) => Step(
-                    (index + 1).ToString("00"),
-                    label)))
-            : Step(step, title);
-        IReadOnlyList<string> logo = height >= 24 ? Branding.Fit(width - 2) : ["VRCLI"];
-        bool fullLogo = logo.Count > 1;
-        if (fullLogo)
-        {
-            foreach (string line in logo) frame.Add(" " + Paint(line, "36;1"));
-            frame.Add(" " + Paint(Branding.FooterLine, "90;1"));
-            frame.Add(string.Empty);
-            frame.Add(" " + routeText);
-        }
-        else
-        {
-            frame.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  ", "90") + routeText);
-        }
-        frame.Add(Paint(" " + new string('─', width - 2), "90"));
-        frame.Add(string.Empty);
-        frame.Add(" " + Paint(Truncate(title, width - 2), "1"));
-        frame.Add(Paint("    " + Truncate(description, width - 5), "90"));
-        frame.Add(string.Empty);
-
-        int summaryLimit = Math.Max(1, height - 17 - (fullLogo ? 6 : 0) - (choices?.Count ?? 0));
-        foreach ((string label, string value) in summary.TakeLast(summaryLimit))
-            frame.Add(" " + Paint("✓", "32;1") + "  " + Paint(TerminalText.PadRight(label, 11), "90") + Truncate(value, width - 18));
-
-        if (context.Count > 0)
-        {
-            frame.Add(string.Empty);
-            foreach (string line in context.Take(ContextCapacity(height)))
-                frame.Add(Paint("    " + Truncate(line, width - 5), "90"));
-        }
-
-        if (busyMessage != null)
-        {
-            frame.Add(string.Empty);
-            frame.Add(" " + Paint("⠋", "36;1") + "  " + Truncate(busyMessage, width - 6));
-        }
-        if (notice != null)
-        {
-            frame.Add(string.Empty);
-            frame.Add(" " + Paint("!", "33;1") + "  " + Truncate(notice, width - 6));
-        }
-
-        int visibleChoiceCount = choices == null
-            ? 0
-            : Math.Min(choices.Count, Math.Max(1, height - 12));
-        int promptHeight = choices == null ? 5 : visibleChoiceCount + 5;
-        while (frame.Count < height - promptHeight) frame.Add(string.Empty);
-        if (frame.Count > height - promptHeight) frame.RemoveRange(height - promptHeight, frame.Count - (height - promptHeight));
-
-        frame.Add(Paint(" " + new string('─', width - 2), "90"));
-        if (promptLabel == null)
-        {
-            frame.Add(Paint(" Waiting for input…", "90"));
-        }
-        else if (choices == null)
-        {
-            frame.Add(" " + Paint("›", "36;1") + "  " + Truncate(promptLabel, width - 6));
-            bool empty = string.IsNullOrEmpty(promptValue);
-            string display = Truncate(empty ? "Type a value" : promptValue!, width - 7);
-            frame.Add("    " + Paint("▌ ", "36;1") + (empty ? Paint(display, "90") : display));
-        }
-        else
-        {
-            frame.Add(" " + Paint("?", "36;1") + "  " + Truncate(promptLabel, width - 6));
-            int firstChoice = Math.Clamp(
-                selectedChoice - visibleChoiceCount / 2,
-                0,
-                Math.Max(0, choices.Count - visibleChoiceCount));
-            for (int index = firstChoice; index < firstChoice + visibleChoiceCount; index++)
+            bool resized = lastSize.HasValue && lastSize.Value != (width, height);
+            lastSize = (width, height);
+            if (resized)
             {
-                string marker = index == selectedChoice ? Paint("❯", "36;1") : " ";
-                string fittedChoice = Truncate(choices[index], width - 7);
-                string choice = index == selectedChoice ? Paint(fittedChoice, "36;1") : fittedChoice;
-                frame.Add($"   {marker}  {choice}");
+                Console.Write("\x1b[2J\x1b[H");
+                previousFrame.Clear();
+                force = true;
             }
-        }
-        frame.Add(Paint(" " + (promptHint ?? "Esc or Ctrl+C ×2 cancel"), "90"));
-        frame.Add(Paint(" " + new string('─', width - 2), "90"));
+            List<string> frame = [];
+            string routeText = width >= 64
+                ? string.Join(
+                    Paint("  →  ", "90"),
+                    route.Select((label, index) => Step(
+                        (index + 1).ToString("00"),
+                        label)))
+                : Step(step, title);
+            IReadOnlyList<string> logo = height >= 24 ? Branding.Fit(width - 2) : ["VRCLI"];
+            bool fullLogo = logo.Count > 1;
+            if (fullLogo)
+            {
+                foreach (string line in logo) frame.Add(" " + Paint(line, "36;1"));
+                frame.Add(" " + Paint(Branding.FooterLine, "90;1"));
+                frame.Add(string.Empty);
+                frame.Add(" " + routeText);
+            }
+            else
+            {
+                frame.Add(Paint(" ◆ VRCLI", "36;1") + Paint("  /  ", "90") + routeText);
+            }
+            frame.Add(Paint(" " + new string('─', width - 2), "90"));
+            frame.Add(string.Empty);
+            frame.Add(" " + Paint(Truncate(title, width - 2), "1"));
+            frame.Add(Paint("    " + Truncate(description, width - 5), "90"));
+            frame.Add(string.Empty);
 
-        frame = frame.Take(height).ToList();
-        int rows = Math.Max(frame.Count, previousFrame.Count);
-        for (int index = 0; index < rows; index++)
-        {
-            string next = index < frame.Count ? frame[index] : string.Empty;
-            string previous = index < previousFrame.Count ? previousFrame[index] : string.Empty;
-            if (!force && string.Equals(next, previous, StringComparison.Ordinal)) continue;
-            Console.Write($"\x1b[{index + 1};1H\x1b[2K{next}");
-        }
-        previousFrame.Clear();
-        previousFrame.AddRange(frame);
+            int summaryLimit = Math.Max(1, height - 17 - (fullLogo ? 6 : 0) - (choices?.Count ?? 0));
+            foreach ((string label, string value) in summary.TakeLast(summaryLimit))
+                frame.Add(" " + Paint("✓", "32;1") + "  " + Paint(TerminalText.PadRight(label, 11), "90") + Truncate(value, width - 18));
+
+            if (context.Count > 0)
+            {
+                frame.Add(string.Empty);
+                foreach (string line in context.Take(ContextCapacity(height)))
+                    frame.Add(Paint("    " + Truncate(line, width - 5), "90"));
+            }
+
+            if (busyMessage != null)
+            {
+                frame.Add(string.Empty);
+                frame.Add(" " + Paint("⠋", "36;1") + "  " + Truncate(busyMessage, width - 6));
+            }
+            if (notice != null)
+            {
+                frame.Add(string.Empty);
+                frame.Add(" " + Paint("!", "33;1") + "  " + Truncate(notice, width - 6));
+            }
+
+            int visibleChoiceCount = choices == null
+                ? 0
+                : Math.Min(choices.Count, Math.Max(1, height - 12));
+            int promptHeight = choices == null ? 5 : visibleChoiceCount + 5;
+            while (frame.Count < height - promptHeight) frame.Add(string.Empty);
+            if (frame.Count > height - promptHeight) frame.RemoveRange(height - promptHeight, frame.Count - (height - promptHeight));
+
+            frame.Add(Paint(" " + new string('─', width - 2), "90"));
+            if (promptLabel == null)
+            {
+                frame.Add(Paint(" Waiting for input…", "90"));
+            }
+            else if (choices == null)
+            {
+                frame.Add(" " + Paint("›", "36;1") + "  " + Truncate(promptLabel, width - 6));
+                bool empty = string.IsNullOrEmpty(promptValue);
+                string display = Truncate(empty ? "Type a value" : promptValue!, width - 7);
+                frame.Add("    " + Paint("▌ ", "36;1") + (empty ? Paint(display, "90") : display));
+            }
+            else
+            {
+                frame.Add(" " + Paint("?", "36;1") + "  " + Truncate(promptLabel, width - 6));
+                int firstChoice = Math.Clamp(
+                    selectedChoice - visibleChoiceCount / 2,
+                    0,
+                    Math.Max(0, choices.Count - visibleChoiceCount));
+                for (int index = firstChoice; index < firstChoice + visibleChoiceCount; index++)
+                {
+                    string marker = index == selectedChoice ? Paint("❯", "36;1") : " ";
+                    string fittedChoice = Truncate(choices[index], width - 7);
+                    string choice = index == selectedChoice ? Paint(fittedChoice, "36;1") : fittedChoice;
+                    frame.Add($"   {marker}  {choice}");
+                }
+            }
+            frame.Add(Paint(" " + (promptHint ?? "Esc or Ctrl+C ×2 cancel"), "90"));
+            frame.Add(Paint(" " + new string('─', width - 2), "90"));
+
+            frame = frame.Take(height).ToList();
+            int rows = Math.Max(frame.Count, previousFrame.Count);
+            for (int index = 0; index < rows; index++)
+            {
+                string next = index < frame.Count ? frame[index] : string.Empty;
+                string previous = index < previousFrame.Count ? previousFrame[index] : string.Empty;
+                if (!force && string.Equals(next, previous, StringComparison.Ordinal)) continue;
+                Console.Write($"\x1b[{index + 1};1H\x1b[2K{next}");
+            }
+            previousFrame.Clear();
+            previousFrame.AddRange(frame);
             Console.Out.Flush();
         }
     }
