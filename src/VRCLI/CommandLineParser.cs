@@ -159,8 +159,18 @@ public sealed class CommandLineParser
                 return ParseResult.Failure("--resume is only valid with the deploy command.");
             string[] conflicting =
             [
-                "scene", "target", "blueprint", "new", "title", "description", "thumbnail",
-                "capacity", "recommended-capacity", "tag", "remove-tag", "platform"
+                "scene",
+                "target",
+                "blueprint",
+                "new",
+                "title",
+                "description",
+                "thumbnail",
+                "capacity",
+                "recommended-capacity",
+                "tag",
+                "remove-tag",
+                "platform"
             ];
             string? conflict = conflicting.FirstOrDefault(values.ContainsKey);
             if (conflict == null && hasTags) conflict = "tag";

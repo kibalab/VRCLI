@@ -37,7 +37,15 @@ public sealed class RecoveryManifestFileTests : IDisposable
 
         ParseResult parsed = new CommandLineParser().Parse(
         [
-            "deploy", "--resume", manifestPath, "--login", "owner", "--password", "password", "--yes", "--plain"
+            "deploy",
+            "--resume",
+            manifestPath,
+            "--login",
+            "owner",
+            "--password",
+            "password",
+            "--yes",
+            "--plain"
         ]);
 
         Assert.Null(parsed.Error);
