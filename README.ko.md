@@ -37,18 +37,46 @@ Windows는 전체 과정을 검증했습니다. macOS는 Apple Silicon/Intel 빌
 
 ## 설치
 
-[GitHub Releases의 최신 버전](https://github.com/kibalab/VRCLI/releases/latest)에서 바로 실행할 수 있는 압축 파일을 다운로드하세요.
+모든 바이너리는 self-contained이므로 .NET을 따로 설치할 필요가 없습니다. 설치 파일은 [GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest)에 배포됩니다.
 
-- Windows x64: `VRCLI-x.y.z-win-x64.zip`
-- Apple Silicon Mac: `VRCLI-x.y.z-osx-arm64.tar.gz`
-- Intel Mac: `VRCLI-x.y.z-osx-x64.tar.gz`
+### Windows x64
 
-압축을 푼 뒤 Windows에서는 `VRCLI.exe`, macOS에서는 `./VRCLI`를 실행합니다. macOS에서는 먼저 실행 권한을 부여하세요.
+PowerShell 설치(권장):
+
+```powershell
+$installer = Join-Path $env:TEMP "install-vrcli.ps1"
+Invoke-WebRequest https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile $installer
+powershell -NoProfile -ExecutionPolicy Bypass -File $installer
+```
+
+릴리스 체크섬을 검증한 뒤 `%LOCALAPPDATA%\Programs\VRCLI`에 설치하고 사용자 `PATH`에 `vrcli`를 추가합니다. 같은 명령을 다시 실행하면 업데이트됩니다.
+
+다른 방법:
+
+- `VRCLI-x.y.z-win-x64-setup.exe`를 받아 실행하면 일반적인 사용자별 설치 및 제거 기능을 사용할 수 있습니다.
+- `VRCLI-x.y.z-win-x64.zip`을 받아 압축을 풀고 `VRCLI.exe`를 실행하면 portable로 사용할 수 있습니다.
+- WinGet Community Repository에 패키지가 승인된 뒤에는 `winget install --id kibalab.VRCLI --exact`로 설치할 수 있습니다. 패키지 식별자는 정확히 `kibalab.VRCLI`입니다.
+
+### macOS
+
+Shell 설치(권장):
 
 ```bash
-chmod +x VRCLI
-./VRCLI
+installer=$(mktemp)
+curl -fL https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh -o "$installer"
+sh "$installer"
+rm "$installer"
 ```
+
+릴리스 체크섬을 검증한 뒤 `~/.local` 아래에 설치하고 새 터미널에서 `vrcli`를 사용할 수 있게 합니다. 같은 명령을 다시 실행하면 업데이트됩니다.
+
+다른 방법:
+
+- Apple Silicon은 `VRCLI-x.y.z-osx-arm64.pkg`, Intel은 `VRCLI-x.y.z-osx-x64.pkg`를 받아 열거나 `sudo installer -pkg <파일> -target /`로 설치할 수 있습니다.
+- 아키텍처에 맞는 `.tar.gz`를 받아 압축을 풀고 `chmod +x VRCLI && ./VRCLI`를 실행하면 portable로 사용할 수 있습니다.
+- 각 릴리스에는 두 아키텍처의 체크섬이 고정된 `vrcli.rb` Formula가 포함됩니다. `kibalab/homebrew-tap` 저장소가 공개된 뒤에는 `brew install kibalab/tap/vrcli`로 설치할 수 있습니다.
+
+현재 macOS 패키지는 서명 및 공증되지 않았습니다. macOS 보안 설정에서 허용하기 전에 다운로드한 파일과 `SHA256SUMS.txt`의 체크섬을 확인하세요.
 
 ### 소스에서 빌드
 
