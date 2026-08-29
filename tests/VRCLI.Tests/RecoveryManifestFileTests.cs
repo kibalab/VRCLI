@@ -70,6 +70,64 @@ public sealed class RecoveryManifestFileTests : IDisposable
         Assert.Contains("recovery bundle does not exist", parsed.Error);
     }
 
+    [Fact]
+    public void CompletionDeletesOnlyTheManifestAndItsBundle()
+    {
+        string project = Path.Combine(root, "project-complete");
+        string recoveryDirectory = Path.Combine(root, "recovery");
+        string bundle = Path.Combine(recoveryDirectory, "bundle.vrca");
+        string unrelated = Path.Combine(recoveryDirectory, "keep.txt");
+        Directory.CreateDirectory(project);
+        Directory.CreateDirectory(recoveryDirectory);
+        File.WriteAllText(bundle, "bundle");
+        File.WriteAllText(unrelated, "keep");
+        string manifestPath = Write(new RecoveryManifest
+        {
+            ProjectPath = project,
+            ContentType = "Avatar",
+            Blueprint = "avtr_example",
+            Platform = "StandaloneWindows64",
+            BundlePath = bundle
+        });
+
+        RecoveryManifestFile.Complete(manifestPath);
+
+        Assert.False(File.Exists(bundle));
+        Assert.False(File.Exists(manifestPath));
+        Assert.True(File.Exists(unrelated));
+    }
+
+    [Fact]
+    public void PreservesANewWorldBlueprintDuringResume()
+    {
+        string project = Path.Combine(root, "project-new-world");
+        string bundle = Path.Combine(root, "world.vrcw");
+        Directory.CreateDirectory(project);
+        File.WriteAllText(bundle, "bundle");
+        string manifestPath = Write(new RecoveryManifest
+        {
+            ProjectPath = project,
+            ContentType = "World",
+            Blueprint = "wrld_preserved",
+            IsNew = true,
+            Title = "Recovered world",
+            ThumbnailPath = Path.Combine(root, "thumbnail.png"),
+            Capacity = 32,
+            RecommendedCapacity = 16,
+            Platform = "Android",
+            ScenePath = "Assets/Main.unity",
+            BundlePath = bundle,
+            Signature = "signature"
+        });
+
+        ParseResult parsed = new CommandLineParser().Parse(
+            ["deploy", "--resume", manifestPath, "--login", "owner", "--password", "password", "--yes"]);
+
+        Assert.Null(parsed.Error);
+        Assert.True(parsed.Options!.IsNew);
+        Assert.Equal("wrld_preserved", parsed.Options.BlueprintId);
+    }
+
     private string Write(RecoveryManifest manifest)
     {
         Directory.CreateDirectory(root);

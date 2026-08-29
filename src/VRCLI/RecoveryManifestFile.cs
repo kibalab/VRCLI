@@ -19,6 +19,19 @@ public static class RecoveryManifestFile
         return manifest;
     }
 
+    public static void Complete(string manifestPath)
+    {
+        RecoveryManifest manifest = Load(manifestPath);
+        File.Delete(manifest.BundlePath);
+        File.Delete(manifestPath);
+        string? directory = Path.GetDirectoryName(manifestPath);
+        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory) &&
+            !Directory.EnumerateFileSystemEntries(directory).Any())
+        {
+            Directory.Delete(directory);
+        }
+    }
+
     private static void Validate(RecoveryManifest manifest, string path)
     {
         if (manifest.FormatVersion != 1)

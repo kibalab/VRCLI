@@ -209,7 +209,7 @@ public sealed class CommandLineParser
             return ParseResult.Failure("Set VRCLI_USERNAME or provide --login <username-or-email>.");
         }
 
-        if (operation == OperationMode.Deploy && isNew && !string.IsNullOrWhiteSpace(blueprint))
+        if (operation == OperationMode.Deploy && isNew && recovery == null && !string.IsNullOrWhiteSpace(blueprint))
         {
             return ParseResult.Failure(
                 "Choose one target: --new cannot be combined with --blueprint, VRCLI_BLUEPRINT_ID, or a configured Blueprint ID.");
@@ -281,7 +281,7 @@ public sealed class CommandLineParser
             {
                 return ParseResult.Failure("The internally preserved new-world Blueprint ID is invalid.");
             }
-            blueprint = newBlueprintOverride ?? "wrld_" + Guid.NewGuid();
+            blueprint = recovery?.Blueprint ?? newBlueprintOverride ?? "wrld_" + Guid.NewGuid();
         }
         if (!string.IsNullOrWhiteSpace(blueprint) &&
             !blueprint.StartsWith("wrld_", StringComparison.Ordinal) &&

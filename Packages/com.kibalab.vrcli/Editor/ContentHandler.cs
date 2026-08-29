@@ -37,6 +37,7 @@ namespace KibaLab.WorldDeployment.Editor
         public string Path;
         public long Size;
         public string Sha256;
+        public string RecoveryFile;
 
         public static BuildArtifact Capture(string path)
         {

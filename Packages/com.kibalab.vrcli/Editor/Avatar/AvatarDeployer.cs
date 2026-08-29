@@ -65,25 +65,33 @@ namespace KibaLab.WorldDeployment.Editor
                 DeploymentLog.Info("AVATAR", "Ownership confirmed for the authenticated account.");
             }
 
-            DeploymentLog.Phase("SDK", "Initializing the VRChat avatar builder.");
-            IVRCSdkAvatarBuilderApi builder = await GetBuilderAsync();
-            builder.SelectAvatar(target.GameObject);
-            string invalidReason;
-            if (!builder.IsValidBuilder(out invalidReason))
-                throw new BuilderException(string.IsNullOrWhiteSpace(invalidReason) ? "The VRChat SDK avatar builder rejected the selected avatar." : invalidReason);
-
-            EventHandler<string> progress = (sender, status) => DeploymentLog.Info("BUILD", status);
-            builder.OnSdkBuildProgress += progress;
             string bundlePath;
-            try
+            if (request.IsResume)
             {
-                VRC_SdkBuilder.ActiveBuildType = VRC_SdkBuilder.BuildType.Publish;
-                DeploymentLog.Phase("BUILD", "Starting SDK validation and avatar asset-bundle build for " + request.Platform + ".");
-                bundlePath = await builder.Build(target.GameObject);
+                DeploymentLog.Phase("BUILD", "Reusing the preserved avatar bundle; SDK validation and build are skipped for this recovery attempt.");
+                bundlePath = request.ResumeBundlePath;
             }
-            finally
+            else
             {
-                builder.OnSdkBuildProgress -= progress;
+                DeploymentLog.Phase("SDK", "Initializing the VRChat avatar builder.");
+                IVRCSdkAvatarBuilderApi builder = await GetBuilderAsync();
+                builder.SelectAvatar(target.GameObject);
+                string invalidReason;
+                if (!builder.IsValidBuilder(out invalidReason))
+                    throw new BuilderException(string.IsNullOrWhiteSpace(invalidReason) ? "The VRChat SDK avatar builder rejected the selected avatar." : invalidReason);
+
+                EventHandler<string> progress = (sender, status) => DeploymentLog.Info("BUILD", status);
+                builder.OnSdkBuildProgress += progress;
+                try
+                {
+                    VRC_SdkBuilder.ActiveBuildType = VRC_SdkBuilder.BuildType.Publish;
+                    DeploymentLog.Phase("BUILD", "Starting SDK validation and avatar asset-bundle build for " + request.Platform + ".");
+                    bundlePath = await builder.Build(target.GameObject);
+                }
+                finally
+                {
+                    builder.OnSdkBuildProgress -= progress;
+                }
             }
             if (string.IsNullOrWhiteSpace(bundlePath) || !File.Exists(bundlePath))
                 throw new BuilderException("The SDK did not return a valid avatar bundle path.");
@@ -91,6 +99,7 @@ namespace KibaLab.WorldDeployment.Editor
             DeploymentLog.Info("BUILD", "Bundle ready: " + bundlePath);
             DeploymentLog.Info("BUILD", "Bundle size: " + DeploymentLog.FormatBytes(new FileInfo(bundlePath).Length));
             DeploymentLog.Info("BUILD", "Bundle SHA-256: " + artifact.Sha256);
+            RecoveryStore.Preserve(request, artifact, null, created);
             DeploymentLog.Phase("SIGNATURE", "Avatar bundles do not use the world bundle-signature step; continuing with SDK upload.");
 
             ResetUploadProgress();

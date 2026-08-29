@@ -97,35 +97,43 @@ namespace KibaLab.WorldDeployment.Editor
                     (string.IsNullOrWhiteSpace(world.GetLatestAssetUrlForPlatform(VRC.Tools.Platform)) ? "not present; a platform bundle will be added" : "present; a new file version will be uploaded"));
             }
 
-            DeploymentLog.Phase("SDK", "Initializing the VRChat world builder.");
-            IVRCSdkWorldBuilderApi builder = await GetBuilderAsync();
-            DeploymentLog.Info("SDK", "VRChat world builder is ready.");
             pipeline.blueprintId = request.BlueprintId;
             if (request.IsNew)
             {
-                SynchronizeBuilderBlueprint(builder, request.BlueprintId);
                 await OwnershipAgreement.AcceptForNewContentAsync(request.BlueprintId, request.OwnershipAccepted);
             }
             else
             {
                 await OwnershipAgreement.EnsureAsync(request.BlueprintId, request.OwnershipAccepted);
             }
-            EventHandler<string> buildProgress = OnBuildProgress;
-            EventHandler<string> buildSuccess = (sender, path) =>
-                DeploymentLog.Info("BUILD", "SDK produced build artifact: " + path);
-            builder.OnSdkBuildProgress += buildProgress;
-            builder.OnSdkBuildSuccess += buildSuccess;
             (string path, string signature) build;
-            try
+            if (request.IsResume)
             {
-                DeploymentLog.Phase("BUILD", "Starting SDK validation and world asset-bundle build for " + request.Platform + ".");
-                DeploymentLog.Info("SIGNATURE", "The SDK will generate a fresh signature for this bundle.");
-                build = await builder.BuildWithSignature();
+                DeploymentLog.Phase("BUILD", "Reusing the preserved world bundle; SDK validation and build are skipped for this recovery attempt.");
+                build = (request.ResumeBundlePath, request.ResumeSignature);
             }
-            finally
+            else
             {
-                builder.OnSdkBuildProgress -= buildProgress;
-                builder.OnSdkBuildSuccess -= buildSuccess;
+                DeploymentLog.Phase("SDK", "Initializing the VRChat world builder.");
+                IVRCSdkWorldBuilderApi builder = await GetBuilderAsync();
+                DeploymentLog.Info("SDK", "VRChat world builder is ready.");
+                if (request.IsNew) SynchronizeBuilderBlueprint(builder, request.BlueprintId);
+                EventHandler<string> buildProgress = OnBuildProgress;
+                EventHandler<string> buildSuccess = (sender, path) =>
+                    DeploymentLog.Info("BUILD", "SDK produced build artifact: " + path);
+                builder.OnSdkBuildProgress += buildProgress;
+                builder.OnSdkBuildSuccess += buildSuccess;
+                try
+                {
+                    DeploymentLog.Phase("BUILD", "Starting SDK validation and world asset-bundle build for " + request.Platform + ".");
+                    DeploymentLog.Info("SIGNATURE", "The SDK will generate a fresh signature for this bundle.");
+                    build = await builder.BuildWithSignature();
+                }
+                finally
+                {
+                    builder.OnSdkBuildProgress -= buildProgress;
+                    builder.OnSdkBuildSuccess -= buildSuccess;
+                }
             }
 
             if (string.IsNullOrWhiteSpace(build.path) || !File.Exists(build.path) ||
@@ -156,6 +164,7 @@ namespace KibaLab.WorldDeployment.Editor
             int previousVersion = request.IsNew ? 0 : world.Version;
             BuildArtifact artifact = BuildArtifact.Capture(build.path);
             DeploymentLog.Info("BUILD", "Bundle SHA-256: " + artifact.Sha256);
+            RecoveryStore.Preserve(request, artifact, build.signature, request.IsNew);
             VRCWorld uploaded;
             if (request.IsNew)
             {
