@@ -21,13 +21,15 @@ install_root="${prefix}/lib/vrcli"
 command_path="${prefix}/bin/vrcli"
 if [ -L "$command_path" ]; then
   link_target=$(readlink "$command_path")
-  if [ "$link_target" = "${install_root}/VRCLI" ]; then
+  if [ "$link_target" = "${install_root}/VRCLI" ] || [ "$link_target" = '../lib/vrcli/VRCLI' ]; then
     rm "$command_path"
   fi
 fi
 if [ -d "$install_root" ]; then
   rm -rf "$install_root"
 fi
+rmdir "${prefix}/bin" 2>/dev/null || true
+rmdir "${prefix}/lib" 2>/dev/null || true
 
 if [ "$update_path" -eq 1 ]; then
   case "${SHELL:-}" in

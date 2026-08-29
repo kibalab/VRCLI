@@ -30,5 +30,5 @@ sudo installer -pkg "$package" -target / >/dev/null
 sudo sh "${install_prefix}/lib/vrcli/uninstall-vrcli.sh" \
   --prefix "$install_prefix" \
   --no-path-update
-[ ! -e "${install_prefix}/bin/vrcli" ]
+[ ! -L "${install_prefix}/bin/vrcli" ]
 [ ! -d "${install_prefix}/lib/vrcli" ]
