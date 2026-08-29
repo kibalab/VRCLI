@@ -8,7 +8,8 @@ namespace KibaLab.WorldDeployment;
 public sealed class DeploymentApplication(
     TextWriter output,
     TextWriter error,
-    string? newBlueprintOverride = null)
+    string? newBlueprintOverride = null,
+    Func<IVrchatSessionStore>? sessionStoreFactory = null)
 {
     private static readonly JsonSerializerOptions ResultJsonOptions = new() { WriteIndented = true };
     private readonly CommandLineParser parser = new();
@@ -454,19 +455,56 @@ public sealed class DeploymentApplication(
         }
         else
         {
-            await ReportAsync(terminalUi, "AUTH", "Validating account credentials with VRChat.", true);
-            user = await VrchatAuthentication.SignInAsync(
-                api,
-                options.Username,
-                options.Password,
-                options.TwoFactorCode,
-                options.TwoFactorMethod,
-                options.TotpSecret,
-                options.InteractiveTwoFactor && terminalUi != null
-                    ? methods => Task.FromResult(terminalUi.PromptForTwoFactor(methods))
-                    : null,
-                message => Report(terminalUi, "AUTH", message),
-                cancellationToken);
+            if (string.IsNullOrEmpty(options.Password))
+            {
+                IVrchatSessionStore store = sessionStoreFactory?.Invoke() ?? new VrchatSessionStore();
+                IReadOnlyList<SavedVrchatSession> matches = VrchatSessionStore.Match(store.List(), options.Username);
+                if (matches.Count == 0)
+                {
+                    throw new VrchatApiException(
+                        "No saved session matches --login. Provide --password/VRCLI_PASSWORD or sign in once through the TUI.");
+                }
+                if (matches.Count > 1)
+                {
+                    throw new VrchatApiException(
+                        "More than one saved session matches --login. Use the exact VRChat user ID shown by 'vrcli auth list'.");
+                }
+
+                SavedVrchatSession saved = matches[0];
+                await ReportAsync(terminalUi, "AUTH", "Validating the saved session for " + saved.DisplayName + ".", true);
+                try
+                {
+                    user = await api.ResumeSessionAsync(saved.Tokens, cancellationToken);
+                    store.Save(saved with
+                    {
+                        DisplayName = user.DisplayName,
+                        Tokens = api.ExportSession(),
+                        LastUsed = DateTimeOffset.UtcNow
+                    });
+                }
+                catch (VrchatApiException)
+                {
+                    store.Delete(saved.UserId);
+                    throw new VrchatApiException(
+                        "The saved session for " + saved.DisplayName + " expired and was removed. Sign in again with --password or the TUI.");
+                }
+            }
+            else
+            {
+                await ReportAsync(terminalUi, "AUTH", "Validating account credentials with VRChat.", true);
+                user = await VrchatAuthentication.SignInAsync(
+                    api,
+                    options.Username,
+                    options.Password,
+                    options.TwoFactorCode,
+                    options.TwoFactorMethod,
+                    options.TotpSecret,
+                    options.InteractiveTwoFactor && terminalUi != null
+                        ? methods => Task.FromResult(terminalUi.PromptForTwoFactor(methods))
+                        : null,
+                    message => Report(terminalUi, "AUTH", message),
+                    cancellationToken);
+            }
         }
         return (user, api.ExportSession());
     }
@@ -663,11 +701,13 @@ public sealed class DeploymentApplication(
 VRCLI commands and parameters
 
   deploy                        Build and upload project content; auto-detects World or Avatar
-  meta                          Update only an existing world's metadata
+  meta                          Update existing world or avatar metadata without Unity
   check                         Check Unity compilation and SDK readiness; auto-detects content type
+  auth list                     List saved VRChat sessions without exposing tokens
+  auth logout <account>         Remove one saved session; use --all to remove every session
 
   --project <directory>         Unity project directory for deploy/check; default current directory
-  --blueprint <content_id>      wrld_ or avtr_ override; deploy/check use the scene ID when omitted; meta requires wrld_
+  --blueprint <content_id>      wrld_ or avtr_ override; deploy/check use the scene ID when omitted; meta requires one
   --new                         Create a private world; deploy only
   --scene <Assets/...unity>     Scene to deploy or check; auto-detected when unambiguous
   --target <hierarchy/path>     Avatar GameObject to deploy/check when a scene contains several avatars

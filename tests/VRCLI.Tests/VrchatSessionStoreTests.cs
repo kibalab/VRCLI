@@ -31,4 +31,20 @@ public sealed class VrchatSessionStoreTests
             store.Delete(userId);
         }
     }
+
+    [Fact]
+    public void MatchesDisplayNameLoginHintOrUserIdWithoutCaseSensitivity()
+    {
+        SavedVrchatSession session = new(
+            "usr_example",
+            "KIBA_",
+            "owner@example.com",
+            new VrchatSessionTokens("secret-auth", "secret-two-factor"),
+            DateTimeOffset.UtcNow);
+
+        Assert.Single(VrchatSessionStore.Match([session], "kiba_"));
+        Assert.Single(VrchatSessionStore.Match([session], "OWNER@EXAMPLE.COM"));
+        Assert.Single(VrchatSessionStore.Match([session], "USR_EXAMPLE"));
+        Assert.Empty(VrchatSessionStore.Match([session], "other"));
+    }
 }

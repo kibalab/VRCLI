@@ -28,6 +28,9 @@ internal static class Program
             }
         };
 
+        if (AuthApplication.ShouldHandle(args))
+            return await new AuthApplication(Console.Out, Console.Error).RunAsync(args);
+
         if (InteractiveMetadataEditor.ShouldStart(args))
         {
             try
