@@ -94,11 +94,28 @@ jobs:
         shell: pwsh
         run: '& "${{ matrix.executable }}" --help'
 
+      - name: Build Windows installer
+        if: matrix.runtime == 'win-x64'
+        shell: pwsh
+        run: >-
+          ./scripts/build-windows-installer.ps1
+          -Version "${{ needs.version.outputs.value }}"
+          -PublishDirectory artifacts/win-x64
+          -OutputDirectory artifacts/windows-installer
+
       - name: Upload native build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: VRCLI-${{ matrix.runtime }}
           path: artifacts/${{ matrix.runtime }}
+          if-no-files-found: error
+
+      - name: Upload Windows installer
+        if: matrix.runtime == 'win-x64'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: VRCLI-win-x64-installer
+          path: artifacts/windows-installer/*.exe
           if-no-files-found: error
 
   release:
@@ -139,6 +156,7 @@ jobs:
           tar -C artifacts/native/VRCLI-osx-x64 -czf "artifacts/packages/VRCLI-$VERSION-osx-x64.tar.gz" .
           tar -C artifacts/native/VRCLI-osx-arm64 -czf "artifacts/packages/VRCLI-$VERSION-osx-arm64.tar.gz" .
           (cd Packages/com.kibalab.vrcli && zip -q -r "$GITHUB_WORKSPACE/artifacts/packages/com.kibalab.vrcli-$VERSION.zip" .)
+          cp artifacts/native/VRCLI-win-x64-installer/*.exe artifacts/packages/
           cp scripts/install-vrcli.ps1 artifacts/packages/install-vrcli.ps1
 
       - name: Generate SPDX SBOM
