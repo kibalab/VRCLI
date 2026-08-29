@@ -200,6 +200,19 @@ jobs:
             "artifacts/packages/VRCLI-$VERSION.spdx.json"
           rm -rf artifacts/packages/_manifest
 
+      - name: Generate Homebrew Formula
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.value }}
+        run: |
+          $arm64Archive = "artifacts/packages/VRCLI-$env:VERSION-osx-arm64.tar.gz"
+          $x64Archive = "artifacts/packages/VRCLI-$env:VERSION-osx-x64.tar.gz"
+          ./scripts/new-homebrew-formula.ps1 `
+            -Version $env:VERSION `
+            -Arm64Sha256 (Get-FileHash -LiteralPath $arm64Archive -Algorithm SHA256).Hash `
+            -X64Sha256 (Get-FileHash -LiteralPath $x64Archive -Algorithm SHA256).Hash `
+            -OutputPath artifacts/packages/vrcli.rb
+
       - name: Generate WinGet submission manifests
         shell: pwsh
         env:
@@ -219,7 +232,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          (cd artifacts/packages && sha256sum VRCLI-* com.kibalab.vrcli-* kibalab.VRCLI-* > SHA256SUMS.txt)
+          (cd artifacts/packages && sha256sum VRCLI-* com.kibalab.vrcli-* kibalab.VRCLI-* vrcli.rb > SHA256SUMS.txt)
 
       - name: Attest release artifacts
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
