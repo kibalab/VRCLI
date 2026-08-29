@@ -6,26 +6,19 @@ internal static class Program
     {
         Console.OutputEncoding = new System.Text.UTF8Encoding(false);
         using CancellationTokenSource cancellation = new();
-        DateTimeOffset? firstInterrupt = null;
-        object interruptGate = new();
+        DoubleInterruptGuard interruptGuard = new(TimeSpan.FromSeconds(30));
         Console.CancelKeyPress += (_, eventArgs) =>
         {
             eventArgs.Cancel = true;
-            lock (interruptGate)
+            if (interruptGuard.Register(DateTimeOffset.UtcNow))
             {
-                DateTimeOffset now = DateTimeOffset.UtcNow;
-                if (firstInterrupt.HasValue && now - firstInterrupt.Value <= TimeSpan.FromSeconds(30))
-                {
-                    cancellation.Cancel();
-                    TerminalInterruptFeedback.Show("Cancelling…");
-                    firstInterrupt = null;
-                    return;
-                }
-
-                firstInterrupt = now;
-                if (!TerminalInterruptFeedback.Show("Press Ctrl+C again to cancel."))
-                    Console.Error.WriteLine("VRCLI: Press Ctrl+C again to cancel.");
+                cancellation.Cancel();
+                TerminalInterruptFeedback.Show("Cancelling…");
+                return;
             }
+
+            if (!TerminalInterruptFeedback.Show("Press Ctrl+C again to cancel."))
+                Console.Error.WriteLine("VRCLI: Press Ctrl+C again to cancel.");
         };
 
         if (AuthApplication.ShouldHandle(args))
