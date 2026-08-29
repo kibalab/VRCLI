@@ -30,14 +30,29 @@ You need:
 - A VCC/VPM project with either VRChat Worlds SDK or Avatars SDK 3.9.0 or newer
 - The Unity version recorded in `ProjectSettings/ProjectVersion.txt`
 - [VPM CLI](https://vcc.docs.vrchat.com/vpm/cli/) available as `vpm`
-- .NET 8 SDK to build VRCLI
+- .NET 8 SDK only if you want to build VRCLI from source
 - A VRChat account that can upload worlds or avatars
 
 Windows is tested end to end. macOS builds and Unity Hub discovery support Apple silicon and Intel Macs, but a complete Mac upload has not yet been verified. Use `UNITY_EDITOR_PATH` or `--unity` only when Unity is installed outside the standard Hub directories.
 
 ## Install
 
-Clone the repository and publish a standalone executable.
+Download the latest ready-to-run archive from [GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest):
+
+- Windows x64: `VRCLI-x.y.z-win-x64.zip`
+- Apple silicon Mac: `VRCLI-x.y.z-osx-arm64.tar.gz`
+- Intel Mac: `VRCLI-x.y.z-osx-x64.tar.gz`
+
+Extract the archive, then run `VRCLI.exe` on Windows or `./VRCLI` on macOS. On macOS, make the extracted file executable first:
+
+```bash
+chmod +x VRCLI
+./VRCLI
+```
+
+### Build from source
+
+Install the .NET 8 SDK, clone the repository, and publish for your platform.
 
 Windows:
 
@@ -48,7 +63,7 @@ dotnet publish src/VRCLI/VRCLI.csproj -c Release -r win-x64 `
   --self-contained true -o artifacts/win-x64
 ```
 
-macOS Apple silicon (`osx-x64` for Intel):
+macOS Apple silicon (use `osx-x64` for Intel):
 
 ```bash
 git clone https://github.com/kibalab/VRCLI.git
@@ -58,8 +73,6 @@ dotnet publish src/VRCLI/VRCLI.csproj -c Release -r osx-arm64 \
 
 export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Contents/MacOS/Unity"
 ```
-
-Run `VRCLI.exe` on Windows or `./VRCLI` on macOS.
 
 ## Use it interactively
 
