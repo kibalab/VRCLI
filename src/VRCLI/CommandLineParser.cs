@@ -40,7 +40,8 @@ public sealed class CommandLineParser
         "project",
         "new",
         "login",
-        "title"
+        "title",
+        "resume"
     };
 
     public ParseResult Parse(string[] args, string? newBlueprintOverride = null)
@@ -149,6 +150,33 @@ public sealed class CommandLineParser
         if (values.ContainsKey("help"))
         {
             return ParseResult.Help();
+        }
+
+        RecoveryManifest? recovery = null;
+        if (values.TryGetValue("resume", out string? recoveryPath))
+        {
+            if (operation != OperationMode.Deploy)
+                return ParseResult.Failure("--resume is only valid with the deploy command.");
+            string[] conflicting =
+            [
+                "scene", "target", "blueprint", "new", "title", "description", "thumbnail",
+                "capacity", "recommended-capacity", "tag", "remove-tag", "platform"
+            ];
+            string? conflict = conflicting.FirstOrDefault(values.ContainsKey);
+            if (conflict == null && hasTags) conflict = "tag";
+            if (conflict == null && hasRemovedTags) conflict = "remove-tag";
+            if (conflict != null)
+                return ParseResult.Failure($"--resume restores content settings from its manifest and cannot be combined with --{conflict}.");
+            try
+            {
+                string fullRecoveryPath = Path.GetFullPath(recoveryPath!);
+                recovery = RecoveryManifestFile.Load(fullRecoveryPath);
+                ApplyRecovery(values, tags, ref hasTags, recovery);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException or NotSupportedException)
+            {
+                return ParseResult.Failure("Unable to load --resume manifest: " + exception.Message);
+            }
         }
 
         int outputModes = (values.ContainsKey("tui") ? 1 : 0) +
@@ -375,9 +403,36 @@ public sealed class CommandLineParser
             values.ContainsKey("verbose"),
             values.ContainsKey("tui") ? TerminalMode.Tui :
             values.ContainsKey("plain") ? TerminalMode.Plain :
-            values.ContainsKey("json") ? TerminalMode.Json : TerminalMode.Auto);
+            values.ContainsKey("json") ? TerminalMode.Json : TerminalMode.Auto,
+            recovery);
 
         return ParseResult.Success(options);
+    }
+
+    private static void ApplyRecovery(
+        IDictionary<string, string?> values,
+        ICollection<string> tags,
+        ref bool hasTags,
+        RecoveryManifest recovery)
+    {
+        if (!values.ContainsKey("project")) values["project"] = recovery.ProjectPath;
+        values["blueprint"] = recovery.Blueprint;
+        values["platform"] = recovery.Platform;
+        if (!string.IsNullOrWhiteSpace(recovery.ScenePath)) values["scene"] = recovery.ScenePath;
+        if (!string.IsNullOrWhiteSpace(recovery.TargetPath)) values["target"] = recovery.TargetPath;
+        if (recovery.IsNew) values["new"] = "true";
+        if (recovery.UpdateTitle || recovery.IsNew) values["title"] = recovery.Title;
+        if (recovery.UpdateDescription || recovery.IsNew) values["description"] = recovery.Description;
+        if (recovery.UpdateThumbnail || recovery.IsNew) values["thumbnail"] = recovery.ThumbnailPath;
+        if (recovery.UpdateCapacity || recovery.IsNew)
+            values["capacity"] = recovery.Capacity.ToString(CultureInfo.InvariantCulture);
+        if (recovery.UpdateRecommendedCapacity || recovery.IsNew)
+            values["recommended-capacity"] = recovery.RecommendedCapacity.ToString(CultureInfo.InvariantCulture);
+        if (recovery.UpdateTags || recovery.IsNew)
+        {
+            foreach (string tag in recovery.Tags ?? []) tags.Add(tag);
+            hasTags = true;
+        }
     }
 
     private static bool TryParseOperation(string value, out OperationMode operation)

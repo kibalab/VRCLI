@@ -31,7 +31,8 @@ public sealed record DeployOptions(
     bool SkipVpmResolve,
     bool OwnershipAccepted,
     bool Verbose,
-    TerminalMode TerminalMode);
+    TerminalMode TerminalMode,
+    RecoveryManifest? Recovery = null);
 
 public enum OperationMode
 {
