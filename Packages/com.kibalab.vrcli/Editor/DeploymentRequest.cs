@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 
 namespace KibaLab.WorldDeployment.Editor
@@ -9,6 +10,7 @@ namespace KibaLab.WorldDeployment.Editor
         private static readonly char[] TagSeparators = { '|' };
 
         public RequestOperation Operation { get; private set; }
+        public ContentType ContentType { get; private set; }
         public string BlueprintId { get; private set; }
         public bool IsNew { get; private set; }
         public string Title { get; private set; }
@@ -17,16 +19,17 @@ namespace KibaLab.WorldDeployment.Editor
         public int Capacity { get; private set; }
         public int RecommendedCapacity { get; private set; }
         public string[] Tags { get; private set; }
-        public string Username { get; private set; }
-        public string Password { get; private set; }
-        public string TwoFactorCode { get; private set; }
-        public string TwoFactorMethod { get; private set; }
-        public string TotpSecret { get; private set; }
         public string AuthToken { get; private set; }
         public string TwoFactorToken { get; private set; }
         public string Platform { get; private set; }
         public string ScenePath { get; private set; }
+        public string TargetPath { get; private set; }
+        public string TargetRequestFile { get; private set; }
+        public string TargetResponseFile { get; private set; }
         public string ResultFile { get; private set; }
+        public string RecoveryDirectory { get; private set; }
+        public string ResumeBundlePath { get; private set; }
+        public string ResumeSignature { get; private set; }
         public bool OwnershipAccepted { get; private set; }
         public bool UpdateTitle { get; private set; }
         public bool UpdateDescription { get; private set; }
@@ -37,34 +40,45 @@ namespace KibaLab.WorldDeployment.Editor
 
         public bool HasMetadataUpdate => UpdateTitle || UpdateDescription || UpdateCapacity ||
                                          UpdateRecommendedCapacity || UpdateTags;
+        public bool IsResume => !string.IsNullOrWhiteSpace(ResumeBundlePath);
 
         public static DeploymentRequest FromEnvironment()
         {
             DeploymentRequest request = new DeploymentRequest
             {
                 Operation = ReadOperation(),
+                ContentType = ReadContentType(),
                 BlueprintId = Environment.GetEnvironmentVariable(DeploymentEnvironment.BlueprintId) ?? string.Empty,
                 IsNew = ReadBoolean(DeploymentEnvironment.IsNew),
-                Username = Require(DeploymentEnvironment.Username),
-                Password = Environment.GetEnvironmentVariable(DeploymentEnvironment.Password) ?? string.Empty,
-                TwoFactorCode = Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorCode),
-                TwoFactorMethod = Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorMethod),
-                TotpSecret = Environment.GetEnvironmentVariable(DeploymentEnvironment.TotpSecret),
-                AuthToken = Environment.GetEnvironmentVariable(DeploymentEnvironment.AuthToken),
+                AuthToken = Require(DeploymentEnvironment.AuthToken),
                 TwoFactorToken = Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorToken),
                 Platform = Require(DeploymentEnvironment.Platform),
                 ResultFile = Require(DeploymentEnvironment.ResultFile),
+                RecoveryDirectory = Environment.GetEnvironmentVariable(DeploymentEnvironment.RecoveryDirectory),
+                ResumeBundlePath = Environment.GetEnvironmentVariable(DeploymentEnvironment.ResumeBundle),
+                ResumeSignature = Environment.GetEnvironmentVariable(DeploymentEnvironment.ResumeSignature),
                 ScenePath = Environment.GetEnvironmentVariable(DeploymentEnvironment.Scene),
+                TargetPath = Environment.GetEnvironmentVariable(DeploymentEnvironment.Target),
+                TargetRequestFile = Environment.GetEnvironmentVariable(DeploymentEnvironment.TargetRequestFile),
+                TargetResponseFile = Environment.GetEnvironmentVariable(DeploymentEnvironment.TargetResponseFile),
                 OwnershipAccepted = string.Equals(
                     Environment.GetEnvironmentVariable(DeploymentEnvironment.OwnershipAccepted),
                     "true",
                     StringComparison.OrdinalIgnoreCase)
             };
 
+            if (request.ContentType == ContentType.Avatar && request.IsNew)
+                throw new ArgumentException("VRCLI_CREATE_WORLD is not valid for Avatar projects.");
             if (request.IsNew && string.IsNullOrWhiteSpace(request.BlueprintId))
                 throw new ArgumentException("A generated Blueprint ID is missing for the new world.");
             if (request.Operation != RequestOperation.Deploy && request.IsNew)
                 throw new ArgumentException("VRCLI_CREATE_WORLD is only valid for deployment.");
+            if (request.Operation == RequestOperation.Deploy && string.IsNullOrWhiteSpace(request.RecoveryDirectory))
+                throw new ArgumentException("VRCLI_RECOVERY_DIRECTORY is missing.");
+            if (request.IsResume && !File.Exists(request.ResumeBundlePath))
+                throw new FileNotFoundException("The recovery bundle was not found.", request.ResumeBundlePath);
+            if (request.IsResume && request.ContentType == ContentType.World && string.IsNullOrWhiteSpace(request.ResumeSignature))
+                throw new ArgumentException("VRCLI_RESUME_SIGNATURE is missing for a world recovery.");
 
             if (request.IsNew)
             {
@@ -129,6 +143,15 @@ namespace KibaLab.WorldDeployment.Editor
             return operation;
         }
 
+        private static ContentType ReadContentType()
+        {
+            string value = Require(DeploymentEnvironment.ContentType);
+            ContentType contentType;
+            if (!Enum.TryParse(value, true, out contentType))
+                throw new ArgumentException("VRCLI_CONTENT_TYPE must be World or Avatar.");
+            return contentType;
+        }
+
         private static bool ReadBoolean(string name)
         {
             return string.Equals(Environment.GetEnvironmentVariable(name), "true", StringComparison.OrdinalIgnoreCase);
@@ -174,5 +197,12 @@ namespace KibaLab.WorldDeployment.Editor
     {
         Deploy,
         Check
+    }
+
+
+    internal enum ContentType
+    {
+        World,
+        Avatar
     }
 }

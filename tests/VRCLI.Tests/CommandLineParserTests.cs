@@ -5,16 +5,53 @@ namespace WorldDeployment.Tests;
 public sealed class CommandLineParserTests
 {
     [Fact]
+    public void AllowsPasswordlessLoginForSavedSessionResolution()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+            ["deploy", "--login", "KIBA_", "--project", Directory.GetCurrentDirectory(), "--plain"]);
+
+        Assert.Null(result.Error);
+        Assert.Equal(string.Empty, result.Options!.Password);
+        Assert.Equal("KIBA_", result.Options.Username);
+    }
+
+    [Fact]
+    public void AvatarMetadataRejectsWorldCapacityOptions()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+        [
+            "meta",
+            "--blueprint",
+            "avtr_example",
+            "--title",
+            "Avatar",
+            "--capacity",
+            "32",
+            "--login",
+            "owner",
+            "--password",
+            "password"
+        ]);
+
+        Assert.Contains("only valid for world metadata", result.Error);
+    }
+
+    [Fact]
     public void ParsesMetadataOnlyCommand()
     {
         ParseResult result = new CommandLineParser().Parse(
         [
             "meta",
-            "--blueprint", "wrld_example",
-            "--title", "Updated title",
-            "--capacity", "64",
-            "--login", "kibalab",
-            "--password", "secret",
+            "--blueprint",
+            "wrld_example",
+            "--title",
+            "Updated title",
+            "--capacity",
+            "64",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret",
             "--plain"
         ]);
 
@@ -32,9 +69,12 @@ public sealed class CommandLineParserTests
         ParseResult result = new CommandLineParser().Parse(
         [
             "meta",
-            "--blueprint", "wrld_example",
-            "--login", "kibalab",
-            "--password", "secret"
+            "--blueprint",
+            "wrld_example",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret"
         ]);
 
         Assert.Contains("at least one metadata option", result.Error);
@@ -46,10 +86,14 @@ public sealed class CommandLineParserTests
         ParseResult result = new CommandLineParser().Parse(
         [
             "check",
-            "--scene", "Assets/Scenes/Main.unity",
-            "--platform", "Android",
-            "--login", "kibalab",
-            "--password", "secret",
+            "--scene",
+            "Assets/Scenes/Main.unity",
+            "--platform",
+            "Android",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret",
             "--plain"
         ]);
 
@@ -65,11 +109,16 @@ public sealed class CommandLineParserTests
         ParseResult result = new CommandLineParser().Parse(
         [
             "deploy",
-            "--project", ".",
-            "--scene", "Assets/Scenes/Main.unity",
-            "--platform", "StandaloneWindows64",
-            "--login", "kibalab",
-            "--password", "secret",
+            "--project",
+            ".",
+            "--scene",
+            "Assets/Scenes/Main.unity",
+            "--platform",
+            "StandaloneWindows64",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret",
             "--plain"
         ]);
 
@@ -80,14 +129,57 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
+    public void ParsesAvatarHierarchyTarget()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+        [
+            "deploy",
+            "--target",
+            "Avatars/KIBA_",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret",
+            "--plain"
+        ]);
+
+        Assert.Null(result.Error);
+        Assert.Equal("Avatars/KIBA_", result.Options?.TargetPath);
+    }
+
+    [Fact]
+    public void MetadataCommandRejectsAvatarTarget()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+        [
+            "meta",
+            "--blueprint",
+            "wrld_example",
+            "--target",
+            "Avatars/KIBA_",
+            "--title",
+            "Changed",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret"
+        ]);
+
+        Assert.Contains("deploy or check", result.Error);
+    }
+
+    [Fact]
     public void CheckCommandRejectsMetadataChanges()
     {
         ParseResult result = new CommandLineParser().Parse(
         [
             "check",
-            "--title", "Should not change",
-            "--login", "kibalab",
-            "--password", "secret"
+            "--title",
+            "Should not change",
+            "--login",
+            "kibalab",
+            "--password",
+            "secret"
         ]);
 
         Assert.Contains("not valid with the check command", result.Error);
@@ -163,8 +255,9 @@ public sealed class CommandLineParserTests
         string config = Path.Combine(directory, "vrcli.json");
         File.WriteAllText(config, """
             {
-              "blueprint": "wrld_from_config",
+              "blueprint": "avtr_from_config",
               "scene": "Assets/Scenes/Main.unity",
+              "target": "Avatars/KIBA_",
               "platform": "Android",
               "plain": true,
               "yes": true
@@ -179,8 +272,9 @@ public sealed class CommandLineParserTests
 
             Assert.Null(result.Error);
             Assert.Equal(directory, result.Options?.ProjectPath);
-            Assert.Equal("wrld_from_config", result.Options?.BlueprintId);
+            Assert.Equal("avtr_from_config", result.Options?.BlueprintId);
             Assert.Equal("Assets/Scenes/Main.unity", result.Options?.ScenePath);
+            Assert.Equal("Avatars/KIBA_", result.Options?.TargetPath);
             Assert.Equal(BuildPlatform.Android, result.Options?.Platform);
             Assert.Equal(TerminalMode.Plain, result.Options?.TerminalMode);
             Assert.True(result.Options?.OwnershipAccepted);
@@ -525,7 +619,7 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
-    public void RejectsNonWorldBlueprint()
+    public void AcceptsAvatarBlueprintForProjectTypeValidation()
     {
         CommandLineParser parser = new();
         ParseResult result = parser.Parse(new[]
@@ -537,7 +631,29 @@ public sealed class CommandLineParserTests
             "--platform", "Android"
         });
 
-        Assert.Contains("wrld_", result.Error);
+        Assert.Null(result.Error);
+        Assert.Equal("avtr_example", result.Options!.BlueprintId);
+    }
+
+    [Fact]
+    public void MetaAcceptsAvatarBlueprint()
+    {
+        CommandLineParser parser = new();
+        ParseResult result = parser.Parse(
+        [
+            "meta",
+            "--blueprint",
+            "avtr_example",
+            "--title",
+            "Name",
+            "--login",
+            "kibalab",
+            "--password",
+            "1234"
+        ]);
+
+        Assert.Null(result.Error);
+        Assert.Equal("avtr_example", result.Options!.BlueprintId);
     }
 
     [Fact]

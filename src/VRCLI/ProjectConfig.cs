@@ -20,6 +20,7 @@ public sealed class ProjectConfig
     public bool? NewWorld { get; init; }
 
     public string? Scene { get; init; }
+    public string? Target { get; init; }
     public string? Platform { get; init; }
     public string? Login { get; init; }
     public string? Title { get; init; }

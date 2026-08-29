@@ -15,10 +15,10 @@ namespace KibaLab.WorldDeployment.Editor
 
         public static async Task AcceptForNewContentAsync(string contentId, bool accepted)
         {
-            DeploymentLog.Phase("OWNERSHIP", "Recording content ownership consent for the new world.");
+            DeploymentLog.Phase("OWNERSHIP", "Recording content ownership consent for new VRChat content.");
             if (!accepted)
             {
-                throw new ContentOwnershipException("Creating a world requires --yes to certify that you have the rights to upload its content.");
+                throw new ContentOwnershipException("Creating content requires --yes to certify that you have the rights to upload it.");
             }
 
             // A provisional new-world ID has no world record yet, so checking first
@@ -33,7 +33,7 @@ namespace KibaLab.WorldDeployment.Editor
             });
             if (result.ContentId != contentId || result.AgreementCode != AgreementCode || result.Version != Version)
             {
-                throw new ContentOwnershipException("VRChat rejected the content ownership consent for the new world.");
+                throw new ContentOwnershipException("VRChat rejected the content ownership consent for the new content.");
             }
             MarkSessionAccepted(contentId);
             DeploymentLog.Info("OWNERSHIP", "Content ownership consent version " + Version + " was accepted.");
@@ -48,7 +48,7 @@ namespace KibaLab.WorldDeployment.Editor
             {
                 if (!acceptWhenMissing)
                 {
-                    throw new ContentOwnershipException("Content ownership consent is missing. Re-run with --yes to certify that you have the rights to upload this world.");
+                    throw new ContentOwnershipException("Content ownership consent is missing. Re-run with --yes to certify that you have the rights to upload this content.");
                 }
 
                 VRCAgreement result = await VRCApi.ContentUploadConsent(new VRCAgreement

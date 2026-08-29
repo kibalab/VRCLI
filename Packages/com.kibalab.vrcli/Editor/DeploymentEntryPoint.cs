@@ -34,16 +34,18 @@ namespace KibaLab.WorldDeployment.Editor
             try
             {
                 DeploymentLog.Start();
+                RecoveryStore.Start();
                 request = DeploymentRequest.FromEnvironment();
                 DeploymentLog.Phase("BOOT", request.Operation + " request accepted for " + request.Platform + ".");
                 await Authentication.LoginAsync(request);
                 DeploymentLog.Phase("CONTEXT", "Authentication complete. Resolving operation context.");
 
-                string scenePath = WorldDeployer.ResolveScenePath(request.ScenePath);
+                string scenePath = ContentScene.Resolve(request.ScenePath);
                 LogDeploymentContext(request, scenePath);
+                IContentHandler handler = CreateHandler(request.ContentType);
                 if (request.Operation == RequestOperation.Check)
                 {
-                    CheckReport report = await WorldChecker.RunAsync(request, scenePath);
+                    CheckReport report = await handler.CheckAsync(request, scenePath);
                     int checkExitCode = report.Success ? 0 : 40;
                     DeploymentResult.Write(
                         request.ResultFile,
@@ -52,6 +54,7 @@ namespace KibaLab.WorldDeployment.Editor
                         report.Blueprint,
                         false,
                         request.Platform,
+                        request.ContentType.ToString(),
                         "check",
                         report.Success
                             ? "Preflight check completed without blocking errors; no bundle was built or uploaded."
@@ -66,14 +69,15 @@ namespace KibaLab.WorldDeployment.Editor
                     return;
                 }
 
-                string deployedBlueprint = await WorldDeployer.DeployAsync(request, scenePath);
-                DeploymentResult.Write(request.ResultFile, true, 0, deployedBlueprint, request.IsNew, request.Platform, "complete", request.IsNew ? "World created, built, and uploaded." : "World build and upload completed.");
-                DeploymentLog.Phase("COMPLETE", "Deployment completed successfully for " + deployedBlueprint + ".");
+                DeploymentOutcome outcome = await handler.DeployAsync(request, scenePath);
+                DeploymentResult.Write(request.ResultFile, true, 0, outcome.Blueprint, outcome.Created, request.Platform, request.ContentType.ToString(), "complete", outcome.Message, outcome: outcome);
+                DeploymentLog.Phase("COMPLETE", "Deployment completed successfully for " + outcome.Blueprint + ".");
                 EditorApplication.Exit(0);
             }
             catch (Exception exception)
             {
                 int exitCode = Classify(exception);
+                TargetSelectionException targetSelection = exception as TargetSelectionException;
                 string resultFile = request != null ? request.ResultFile : Environment.GetEnvironmentVariable(DeploymentEnvironment.ResultFile);
                 if (!string.IsNullOrWhiteSpace(resultFile))
                 {
@@ -84,8 +88,12 @@ namespace KibaLab.WorldDeployment.Editor
                         request != null ? request.BlueprintId : null,
                         false,
                         request != null ? request.Platform : null,
-                        StageFor(exitCode),
-                        Describe(exception));
+                        request != null ? request.ContentType.ToString() : null,
+                        targetSelection != null ? "target-selection" :
+                        exception is OperationCanceledException ? "cancelled" : StageFor(exitCode),
+                        Describe(exception),
+                        targets: targetSelection != null ? targetSelection.Targets : null,
+                        outcome: RecoveryStore.FailureOutcome());
                 }
                 DeploymentLog.Info("FAILED", "Phase " + DeploymentLog.CurrentPhase + " failed with exit code " + exitCode + ": " + Describe(exception));
                 Debug.LogException(exception);
@@ -113,19 +121,33 @@ namespace KibaLab.WorldDeployment.Editor
             DeploymentLog.Info("CONTEXT", "VRChat SDK platform: " + VRC.Tools.Platform);
             DeploymentLog.Info("CONTEXT", "VRCLI bridge version: " + DeploymentLog.Version);
             DeploymentLog.Info("CONTEXT", "Mode: " + request.Operation);
+            DeploymentLog.Info("CONTEXT", "Content type: " + request.ContentType);
             if (!string.IsNullOrWhiteSpace(request.BlueprintId))
                 DeploymentLog.Info("CONTEXT", "Blueprint: " + request.BlueprintId);
+            if (!string.IsNullOrWhiteSpace(request.TargetPath))
+                DeploymentLog.Info("CONTEXT", "Avatar target: " + request.TargetPath);
+        }
+
+        private static IContentHandler CreateHandler(ContentType contentType)
+        {
+            Type handlerType = TypeCache.GetTypesDerivedFrom<IContentHandler>()
+                .FirstOrDefault(type => !type.IsAbstract && !type.IsInterface &&
+                    ((IContentHandler)Activator.CreateInstance(type)).ContentType == contentType);
+            if (handlerType == null)
+                throw new InvalidOperationException("The " + contentType + " SDK bridge is unavailable. Ensure the matching VRChat SDK package is installed.");
+            return (IContentHandler)Activator.CreateInstance(handlerType);
         }
 
         private static int Classify(Exception exception)
         {
-            if (exception is ArgumentException || exception is FileNotFoundException) return 10;
+            if (exception is ArgumentException || exception is FileNotFoundException || exception is TargetSelectionException) return 10;
             if (exception is LoginException) return 30;
             if (exception is ContentOwnershipException || exception is OwnershipException) return 60;
             if (exception is ValidationException || exception is BuilderException || exception is BuildBlockedException) return 40;
             if (exception is UploadException || exception is BundleExistsException) return 50;
             if (exception is ApiErrorException || exception is RequestFailedException) return 70;
             if (exception is TimeoutException) return 124;
+            if (exception is OperationCanceledException) return 130;
             return 125;
         }
 
@@ -139,6 +161,7 @@ namespace KibaLab.WorldDeployment.Editor
                 case 50: return "upload";
                 case 60: return "ownership";
                 case 124: return "timeout";
+                case 130: return "cancelled";
                 default: return "unexpected";
             }
         }

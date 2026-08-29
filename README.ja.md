@@ -10,9 +10,16 @@
                                    by KIBA_
 ```
 
-VRCLI は、ターミナルや CI ランナーから VRChat ワールドをビルド、チェック、アップロードします。
+VRCLI は、ターミナルや CI ランナーから VRChat ワールドとアバターをビルド、チェック、アップロードします。`deploy` と `check` はプロジェクトの VPM 依存関係からコンテンツ種別を自動判定します。
 
-> 依存関係について: VRCLI は独立したワールドビルド／アップロード実装ではなく、自動化レイヤーです。対象プロジェクトにインストールされた互換性のある Unity Editor と VRChat Worlds SDK に全面的に依存し、これらの製品を代替または再配布するものではありません。
+## 対応するアップロード
+
+ワールドとアバターの両方で同じ `vrcli deploy` コマンドを使用します。Unity プロジェクトを指定すると、インストール済みの Worlds SDK または Avatars SDK を自動判定するため、ワールド／アバター専用のコマンドを使い分ける必要はありません。
+
+- **ワールド:** 既存ワールドのアップロードまたは新しいプライベートワールドの作成に対応し、`StandaloneWindows64` と `Android` をサポートします。
+- **アバター:** 既存アバターのアップロードまたは新しいプライベートアバターの作成に対応し、`StandaloneWindows64` と `Android` をサポートします。1 つのシーンに複数のアバターがある場合は、Hierarchy パスまたは Blueprint ID で対象を選択できます。
+
+> 依存関係について: VRCLI は独立したコンテンツビルド／アップロード実装ではなく、自動化レイヤーです。対象プロジェクトにインストールされた互換性のある Unity Editor と、対応する VRChat Worlds または Avatars SDK に全面的に依存し、これらの製品を代替または再配布するものではありません。
 >
 > VRChat Inc. とは関係のないコミュニティプロジェクトです。使用権限を持つコンテンツのみアップロードしてください。
 
@@ -20,13 +27,13 @@ VRCLI は、ターミナルや CI ランナーから VRChat ワールドをビ�
 
 次の環境が必要です。
 
-- VRChat Worlds SDK 3.9.0 以降を使用する VCC/VPM ワールドプロジェクト
+- VRChat Worlds SDK または Avatars SDK 3.9.0 以降を使用する VCC/VPM プロジェクト
 - `ProjectSettings/ProjectVersion.txt` に記録されたバージョンの Unity
 - `vpm` コマンドとして利用できる [VPM CLI](https://vcc.docs.vrchat.com/vpm/cli/)
 - VRCLI のビルドに必要な .NET 8 SDK
-- ワールドをアップロードできる VRChat アカウント
+- ワールドまたはアバターをアップロードできる VRChat アカウント
 
-Windows ではテスト済みです。macOS 対応は実験段階です。Apple Silicon と Intel Mac 向けに CLI をビルドできますが、Mac 上でのデプロイ全体はまだ検証していません。Unity の自動検出は現在 Windows のみ対応しているため、`UNITY_EDITOR_PATH` または `--unity` を使用してください。
+Windows はエンドツーエンドで検証済みです。macOS は Apple Silicon／Intel ビルドと Unity Hub の自動検出に対応していますが、Mac 上での実アップロード全体はまだ未検証です。Unity が標準の Hub ディレクトリ外にある場合だけ `UNITY_EDITOR_PATH` または `--unity` を使用してください。
 
 ## インストール
 
@@ -64,11 +71,13 @@ vrcli meta
 vrcli check
 ```
 
-- `deploy`: ワールドをビルドしてアップロードします。
+- `deploy`: プロジェクト種別を判定し、ワールドまたはアバターをビルドしてアップロードします。
 - `meta`: Unity を開かずに既存のメタデータを編集し、ログインセッションを維持します。
-- `check`: ビルドやアップロードを行わず、コンパイルと SDK アップロードの問題を報告します。
+- `check`: プロジェクト種別を判定し、ビルドやアップロードを行わずコンパイルと SDK アップロードの問題を報告します。
 
-TUI でプロジェクト、シーン、アカウント、必要な認証コードを入力できます。Windows では認証済みセッションを Windows 資格情報マネージャーに保存し、次回から保存済みアカウントまたは新しいアカウントを選択できます。
+TUI でプロジェクト、シーン、アカウント、必要な認証コードを入力できます。認証済みセッションは Windows 資格情報マネージャーまたは macOS Keychain に保存され、次回から保存済みアカウントまたは新しいアカウントを選択できます。
+
+通常の CLI でも、`--password` なしで `--login <保存済みアカウント>` を指定すると保存セッションを利用できます。`vrcli auth list`、`vrcli auth logout <account>`、`vrcli auth logout --all` で確認・削除できます。`--password` を指定した場合は常に新規ログインします。
 
 ## CI またはスクリプトで使う
 
@@ -94,6 +103,8 @@ vrcli deploy `
 ```
 
 ワンタイムコードは `--two-factor-code <現在のコード>` とともに `--two-factor-method totp`、`emailOtp`、または `otp` を指定します。コマンドラインのパスワードはシェル履歴やプロセス一覧に残る可能性があるため、CI では環境変数の方が安全です。
+
+ビルド成功後にアップロードまたはサーバー検証が失敗した場合、JSON の `Artifact.RecoveryFile` に復旧マニフェストが返ります。通常のログイン設定と `--resume <recovery.json>` を指定すると、再ビルドせず保存済みバンドルを再送できます。対象プラットフォームのバージョンをサーバーで確認した後にだけ復旧ファイルを削除します。
 
 ### 既存ワールドをデプロイ
 
@@ -125,6 +136,19 @@ vrcli deploy `
 
 新しいワールドはプライベートで作成されます。`--blueprint-output` は生成された Blueprint を後のビルドで使えるように保存します。
 
+### アバターをデプロイ
+
+```powershell
+vrcli deploy `
+  --project "C:\Unity\MyAvatar" `
+  --scene "Assets/Avatar.unity" `
+  --target "Avatars/KIBA_" `
+  --platform StandaloneWindows64 `
+  --yes --plain
+```
+
+VRCLI は Avatars SDK を判定し、シーンのアバターを選択します。`--target` はアバター GameObject の正確な Unity Hierarchy パス、`--blueprint avtr_...` はサーバー上の既存アバターを識別します。どちらか一方で複数のアバターから対象を選べ、両方を指定する場合は同じアバターを示す必要があります。どちらも省略し、シーン内に 1 体だけなら自動選択します。複数ある場合、対話実行では選択画面を表示し、`--plain` と `--json` では安全に停止して `Targets` 候補一覧を返します。選択したアバターに Blueprint がなければ新しいプライベートアバターとして作成され、`--title`、`--thumbnail`、`--yes` が必要です。
+
 ### メタデータのみ更新
 
 ```powershell
@@ -152,7 +176,7 @@ Unity のコンパイル、プロジェクト設定、SDK 検証、所有権、�
 
 ## Windows と Android の並列デプロイ
 
-Jenkins コントローラーや GitHub Actions サービスは Linux 上で実行できますが、`deploy` と `check` ジョブには Windows ランナーを使用してください。VRChat SDK は Linux を正式にサポートしていないため、Linux でのワールドアップロードは保証できません。Unity を起動しない `meta` は Linux でも使用できます。Unity は 1 つのプロジェクトディレクトリを 2 つのプロセスから安全に開けないため、別々のワークスペースを使用してください。
+Jenkins コントローラーや GitHub Actions サービスは Linux 上で実行できますが、`deploy` と `check` ジョブには Windows ランナーを使用してください。VRChat SDK は Linux を正式にサポートしていないため、Linux でのワールドまたはアバターアップロードは保証できません。Unity を起動しない `meta` は Linux でも使用できます。Unity は 1 つのプロジェクトディレクトリを 2 つのプロセスから安全に開けないため、別々のワークスペースを使用してください。
 
 ```yaml
 jobs:
@@ -162,7 +186,7 @@ jobs:
         platform: [StandaloneWindows64, Android]
     runs-on: [self-hosted, windows, x64, vrchat-unity]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - shell: pwsh
         env:
           VRCLI_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
@@ -187,11 +211,25 @@ jobs:
   "Success": true,
   "ExitCode": 0,
   "Blueprint": "wrld_...",
+  "ContentType": "World",
   "Platform": "StandaloneWindows64",
   "Stage": "complete",
-  "Message": "World build and upload completed."
+  "Message": "World build and upload completed.",
+  "Verified": true,
+  "VrcliVersion": "0.19.0",
+  "UnityVersion": "2022.3.22f1",
+  "SdkVersion": "3.10.1",
+  "DurationMs": 120000,
+  "Artifact": {
+    "Size": 12345678,
+    "Sha256": "..."
+  }
 }
 ```
+
+デプロイ結果にはフェーズ別時間と以前／サーバー上のコンテンツバージョンも含まれ、CI ログだけでビルド・アップロード・検証対象を確認できます。
+
+アバター選択が曖昧な場合、非対話実行の失敗結果には各候補の `Name`、Hierarchy `Selector`、任意の `Blueprint` を含む `Targets` が返ります。選ぶ `Selector` を `--target` に指定してください。
 
 すべてのパラメータは `vrcli --help` で確認できます。
 

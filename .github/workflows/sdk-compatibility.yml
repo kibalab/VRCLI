@@ -1,0 +1,38 @@
+name: VRChat SDK Compatibility
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 17 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-compatibility
+  cancel-in-progress: false
+
+jobs:
+  compile:
+    name: ${{ matrix.project-type }} SDK ${{ matrix.sdk-version }}
+    runs-on: [self-hosted, Windows, X64, vrcli-unity]
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        project-type: [World, Avatar]
+        sdk-version: [3.9.0, latest]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Compile bridge in a clean SDK project
+        shell: pwsh
+        env:
+          UNITY_PATH: ${{ vars.UNITY_PATH }}
+        run: >-
+          ./scripts/Test-SdkCompatibility.ps1
+          -ProjectType '${{ matrix.project-type }}'
+          -SdkVersion '${{ matrix.sdk-version }}'
+          -UnityPath $env:UNITY_PATH

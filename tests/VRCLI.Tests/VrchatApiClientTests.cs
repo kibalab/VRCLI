@@ -110,6 +110,70 @@ public sealed class VrchatApiClientTests
         Assert.Equal(["system_approved"], desired.Tags);
     }
 
+    [Fact]
+    public async Task RetriesTransientContentReadsAndParsesPlatformPackages()
+    {
+        TransientContentHandler handler = new();
+        using VrchatApiClient api = new(handler, (_, _) => Task.CompletedTask);
+
+        RemoteContentSnapshot content = await api.GetContentAsync("avtr_example");
+
+        Assert.Equal(3, handler.Attempts);
+        Assert.Equal("avtr_example", content.Id);
+        Assert.Equal(8, content.Version);
+        RemotePlatformPackage package = Assert.Single(content.Packages);
+        Assert.Equal("standalonewindows", package.Platform);
+        Assert.Equal("https://files.example/avatar", package.AssetUrl);
+    }
+
+    [Fact]
+    public async Task VerifiesTheUploadedOwnerVersionAndPlatform()
+    {
+        using VrchatApiClient api = new(new ReadyContentHandler());
+        DeploymentResult result = new(
+            true,
+            ExitCodes.Success,
+            "wrld_example",
+            false,
+            "Android",
+            "complete",
+            "Uploaded.",
+            ServerVersion: 8);
+
+        DeploymentVerification verification = await new DeploymentVerifier().VerifyAsync(
+            api,
+            result,
+            "usr_owner",
+            BuildPlatform.Android);
+
+        Assert.True(verification.Success);
+        Assert.Contains("version 8", verification.Message);
+    }
+
+    [Fact]
+    public async Task UpdatesAvatarMetadataWithoutOpeningUnity()
+    {
+        AvatarRecordingHandler handler = new();
+        StringWriter output = new();
+        MetadataApplication application = new(output, new StringWriter(), () => new VrchatApiClient(handler));
+        DeployOptions options = Options() with
+        {
+            BlueprintId = "avtr_example",
+            Title = "After avatar",
+            TerminalMode = TerminalMode.Json
+        };
+
+        MetadataExecutionResult result = await application.RunAsync(options);
+
+        Assert.Equal(ExitCodes.Success, result.ExitCode);
+        Assert.Equal("Avatar", result.Result.ContentType);
+        Assert.Equal(7, result.Result.PreviousVersion);
+        Assert.Equal(8, result.Result.ServerVersion);
+        Assert.Contains(handler.Requests, request =>
+            request.Method == HttpMethod.Put && request.Path == "/api/1/avatars/avtr_example" &&
+            request.Body.Contains("After avatar"));
+    }
+
     private static WorldMetadataSnapshot World(string title, int capacity, int recommended) => new(
         "wrld_example",
         "usr_owner",
@@ -141,6 +205,7 @@ public sealed class VrchatApiClientTests
         "owner",
         "password",
         BuildPlatform.StandaloneWindows64,
+        null,
         null,
         null,
         null,
@@ -192,4 +257,100 @@ public sealed class VrchatApiClientTests
             version = 7
         });
     }
+
+    private sealed class TransientContentHandler : HttpMessageHandler
+    {
+        public int Attempts { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Attempts++;
+            if (Attempts < 3)
+            {
+                HttpStatusCode status = Attempts == 1
+                    ? HttpStatusCode.ServiceUnavailable
+                    : HttpStatusCode.TooManyRequests;
+                return Task.FromResult(new HttpResponseMessage(status)
+                {
+                    Content = new StringContent("{\"error\":{\"message\":\"retry\"}}")
+                });
+            }
+
+            return Task.FromResult(JsonResponse("""
+            {
+              "id": "avtr_example",
+              "authorId": "usr_owner",
+              "version": 8,
+              "unityPackages": [
+                {
+                  "platform": "standalonewindows",
+                  "assetUrl": "https://files.example/avatar",
+                  "assetVersion": 8
+                }
+              ]
+            }
+            """));
+        }
+    }
+
+    private sealed class ReadyContentHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => Task.FromResult(JsonResponse("""
+            {
+              "id": "wrld_example",
+              "authorId": "usr_owner",
+              "version": 8,
+              "unityPackages": [
+                {
+                  "platform": "android",
+                  "assetUrl": "https://files.example/world",
+                  "assetVersion": 8
+                }
+              ]
+            }
+            """));
+    }
+
+    private sealed class AvatarRecordingHandler : HttpMessageHandler
+    {
+        public List<(HttpMethod Method, string Path, string Body)> Requests { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            string body = request.Content == null
+                ? string.Empty
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            Requests.Add((request.Method, request.RequestUri!.AbsolutePath, body));
+            string response = request.RequestUri.AbsolutePath switch
+            {
+                "/api/1/auth/user" => "{\"id\":\"usr_owner\",\"displayName\":\"Owner\"}",
+                "/api/1/avatars/avtr_example" when request.Method == HttpMethod.Get => AvatarJson("Before avatar", 7),
+                "/api/1/avatars/avtr_example" => AvatarJson("After avatar", 8),
+                _ => throw new InvalidOperationException("Unexpected request: " + request.RequestUri)
+            };
+            return JsonResponse(response);
+        }
+
+        private static string AvatarJson(string title, int version) => JsonSerializer.Serialize(new
+        {
+            id = "avtr_example",
+            authorId = "usr_owner",
+            name = title,
+            description = "Description",
+            tags = new[] { "author_tag_test" },
+            imageUrl = "https://api.vrchat.cloud/api/1/file/file_example/1/file",
+            version
+        });
+    }
+
+    private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(json, Encoding.UTF8, "application/json")
+    };
 }

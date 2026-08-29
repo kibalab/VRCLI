@@ -4,17 +4,63 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
 jobs:
-  test:
-    runs-on: windows-latest
+  test-and-publish:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            runtime: win-x64
+            executable: artifacts/win-x64/VRCLI.exe
+          - name: macOS Apple Silicon
+            os: macos-15
+            runtime: osx-arm64
+            executable: artifacts/osx-arm64/VRCLI
+          - name: macOS Intel
+            os: macos-15-intel
+            runtime: osx-x64
+            executable: artifacts/osx-x64/VRCLI
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
-          dotnet-version: 8.x
-      - run: dotnet test VRCLI.sln --configuration Release
-      - run: dotnet publish src/VRCLI/VRCLI.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts/win-x64
-      - uses: actions/upload-artifact@v4
+          dotnet-version: 8.0.x
+
+      - name: Test
+        run: dotnet test VRCLI.sln --configuration Release
+
+      - name: Publish native executable
+        run: >-
+          dotnet publish src/VRCLI/VRCLI.csproj
+          --configuration Release
+          --runtime ${{ matrix.runtime }}
+          --self-contained true
+          --output artifacts/${{ matrix.runtime }}
+
+      - name: Smoke test native executable
+        shell: pwsh
+        run: '& "${{ matrix.executable }}" --help'
+
+      - name: Upload native executable
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: VRCLI-win-x64
-          path: artifacts/win-x64
+          name: VRCLI-${{ matrix.runtime }}
+          path: artifacts/${{ matrix.runtime }}
+          if-no-files-found: error
+          retention-days: 7

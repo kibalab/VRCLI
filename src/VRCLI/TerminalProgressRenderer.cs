@@ -16,7 +16,8 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         ["AUTH"] = "Authentication",
         ["CONTEXT"] = "Project context",
         ["PREPARE"] = "Project preparation",
-        ["WORLD"] = "World metadata",
+        ["TARGET"] = "Content target",
+        ["WORLD"] = "Content metadata",
         ["SDK"] = "SDK initialization",
         ["OWNERSHIP"] = "Ownership consent",
         ["BUILD"] = "Validation and build",
@@ -53,6 +54,8 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
     private string? verificationInputLabel;
     private string? verificationInputValue;
     private string? verificationNotice;
+    private string verificationTitle = "Verification required";
+    private string verificationDescription = "VRChat requested an additional sign-in step.";
     private string? overviewProject;
     private string? overviewTarget;
     private string? overviewScene;
@@ -83,9 +86,9 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
             OperationMode.Meta =>
             ["AUTH", "BOOT", "CONTEXT", "WORLD", "UPLOAD"],
             OperationMode.Check =>
-            ["AUTH", "BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "CONTEXT", "PREPARE", "WORLD", "SDK", "CHECK"],
+            ["AUTH", "BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "CONTEXT", "PREPARE", "TARGET", "WORLD", "SDK", "CHECK"],
             _ =>
-            ["AUTH", "BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "CONTEXT", "PREPARE", "WORLD", "SDK", "OWNERSHIP", "BUILD", "SIGNATURE", "UPLOAD"]
+            ["AUTH", "BOOT", "DEPENDENCIES", "BRIDGE", "UNITY", "CONTEXT", "PREPARE", "TARGET", "WORLD", "SDK", "OWNERSHIP", "BUILD", "SIGNATURE", "UPLOAD"]
         };
         stageNames = AllStageNames;
         stages = stageOrder.ToDictionary(stage => stage, _ => StageState.Pending, StringComparer.Ordinal);
@@ -221,6 +224,8 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
             verificationInputLabel = null;
             verificationInputValue = null;
             verificationNotice = null;
+            verificationTitle = "Verification required";
+            verificationDescription = "VRChat requested an additional sign-in step.";
             lastMessage = "VRChat requested an additional sign-in step";
             RenderFrameUnsafe(force: true);
         }
@@ -308,6 +313,70 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         return new InteractiveTwoFactorAnswer(method, code);
     }
 
+    public string? PromptForTarget(IReadOnlyList<ContentTarget> targets)
+    {
+        if (targets.Count == 0) throw new InvalidOperationException("Unity returned an empty avatar target list.");
+        List<(string Method, string Label)> options = targets.Select(target =>
+        {
+            string blueprint = string.IsNullOrWhiteSpace(target.Blueprint) ? "New avatar" : target.Blueprint;
+            return (target.Selector, target.Name + "  ·  " + target.Selector + "  ·  " + blueprint);
+        }).ToList();
+
+        lock (gate)
+        {
+            paused = true;
+            verificationPrompt = true;
+            verificationOptions = options;
+            verificationSelection = 0;
+            verificationInputLabel = null;
+            verificationInputValue = null;
+            verificationNotice = null;
+            verificationTitle = "Avatar selection required";
+            verificationDescription = "The scene contains multiple uploadable avatars.";
+            lastMessage = "Choose the avatar to deploy";
+            RenderFrameUnsafe(force: true);
+        }
+
+        while (true)
+        {
+            ConsoleKeyInfo key = ReadKeyInterruptibly();
+            if (key.Key == ConsoleKey.Escape) return EndTargetSelection(null);
+            if (key.Key == ConsoleKey.Enter) return EndTargetSelection(options[verificationSelection].Method);
+            lock (gate)
+            {
+                if (key.Key is ConsoleKey.UpArrow || key.KeyChar is 'k' or 'K')
+                    verificationSelection = (verificationSelection - 1 + options.Count) % options.Count;
+                else if (key.Key is ConsoleKey.DownArrow || key.KeyChar is 'j' or 'J')
+                    verificationSelection = (verificationSelection + 1) % options.Count;
+                else if (char.IsDigit(key.KeyChar))
+                {
+                    int numeric = key.KeyChar - '1';
+                    if (numeric >= 0 && numeric < options.Count) verificationSelection = numeric;
+                }
+                RenderFrameUnsafe();
+            }
+        }
+    }
+
+    private string? EndTargetSelection(string? selector)
+    {
+        lock (gate)
+        {
+            verificationPrompt = false;
+            verificationOptions = [];
+            verificationInputLabel = null;
+            verificationInputValue = null;
+            verificationNotice = null;
+            verificationTitle = "Verification required";
+            verificationDescription = "VRChat requested an additional sign-in step.";
+            paused = false;
+            if (selector != null) overviewTarget = "Avatar · " + selector;
+            lastMessage = selector == null ? "Avatar selection cancelled" : "Submitting avatar selection";
+            RenderFrameUnsafe(force: true);
+        }
+        return selector;
+    }
+
     public async Task FinishAsync(bool success)
     {
         animationCancellation.Cancel();
@@ -380,6 +449,13 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
 
     private void ApplyProgressUnsafe(ProgressLine progress)
     {
+        if (progress.Area == "AVATAR") progress = progress with { Area = "WORLD" };
+        if (progress.Area == "TARGET" && progress.Message.StartsWith("Selected avatar: ", StringComparison.Ordinal))
+        {
+            string selected = progress.Message["Selected avatar: ".Length..];
+            int metadataStart = selected.LastIndexOf(" (", StringComparison.Ordinal);
+            overviewTarget = "Avatar · " + (metadataStart > 0 ? selected[..metadataStart] : selected);
+        }
         if (!progress.StartsPhase && activeStage == progress.Area && !IsNoisyDetail(progress.Message))
             AddDetailUnsafe(lastMessage);
 
@@ -495,7 +571,7 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
 
         int detailCapacity = DetailCapacity(height);
         List<string> footer = verificationPrompt
-            ? BuildVerificationFooter(width)
+            ? BuildVerificationFooter(width, height)
             : BuildDeploymentFooter(width);
         int reservedFooter = footer.Count;
         int stageBudget = Math.Max(3, height - lines.Count - reservedFooter - detailCapacity);
@@ -546,16 +622,20 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
         Paint(" Ctrl+C ×2 cancel", "90") + AlignRight(Paint("VRCLI " + Branding.Version, "90"), width - 1, 14)
     ];
 
-    private List<string> BuildVerificationFooter(int width)
+    private List<string> BuildVerificationFooter(int width, int height)
     {
         List<string> lines =
         [
-            Paint(" ╭─ Verification required " + new string('─', Math.Max(1, width - 27)) + "╮", "33;1"),
-            Paint(" │ VRChat requested an additional sign-in step.", "90")
+            Paint(" ╭─ " + verificationTitle + " " + new string('─', Math.Max(1, width - verificationTitle.Length - 7)) + "╮", "33;1"),
+            Paint(" │ " + Truncate(verificationDescription, width - 4), "90")
         ];
         if (verificationOptions.Count > 0)
         {
-            for (int index = 0; index < verificationOptions.Count; index++)
+            int maximumVisible = Math.Clamp(height - 7, 1, 6);
+            int start = Math.Clamp(verificationSelection - maximumVisible / 2, 0, Math.Max(0, verificationOptions.Count - maximumVisible));
+            int end = Math.Min(verificationOptions.Count, start + maximumVisible);
+            if (start > 0) lines.Add(Paint(" │     ↑ " + start + " more", "90"));
+            for (int index = start; index < end; index++)
             {
                 string marker = index == verificationSelection ? Paint("❯", "36;1") : " ";
                 string fitted = Truncate(verificationOptions[index].Label, width - 9);
@@ -564,6 +644,8 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
                     : fitted;
                 lines.Add($" │  {marker}  {label}");
             }
+            if (end < verificationOptions.Count)
+                lines.Add(Paint(" │     ↓ " + (verificationOptions.Count - end) + " more", "90"));
             lines.Add(Paint(" │  ↑/↓ or j/k move  ·  Enter confirm  ·  Esc cancel", "90"));
         }
         else
@@ -612,14 +694,14 @@ public sealed class TerminalProgressRenderer : IProcessLineObserver
     {
         OperationMode.Meta => "WORLD META",
         OperationMode.Check => "PREFLIGHT CHECK",
-        _ => "WORLD DEPLOY"
+        _ => "CONTENT DEPLOY"
     };
 
     private string OperationDescription() => operation switch
     {
         OperationMode.Meta => "Update VRChat world metadata without a bundle build",
         OperationMode.Check => "Compile and inspect VRChat upload readiness without uploading",
-        _ => "Build, sign, and publish a VRChat world"
+        _ => "Build and publish VRChat world or avatar content"
     };
 
     private string CompletionLabel(bool success) => (operation, success) switch

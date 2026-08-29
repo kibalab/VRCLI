@@ -21,6 +21,7 @@ public sealed record DeployOptions(
     string Password,
     BuildPlatform Platform,
     string? ScenePath,
+    string? TargetPath,
     string? UnityPath,
     string? TwoFactorCode,
     string? TwoFactorMethod,
@@ -30,7 +31,8 @@ public sealed record DeployOptions(
     bool SkipVpmResolve,
     bool OwnershipAccepted,
     bool Verbose,
-    TerminalMode TerminalMode);
+    TerminalMode TerminalMode,
+    RecoveryManifest? Recovery = null);
 
 public enum OperationMode
 {

@@ -21,6 +21,7 @@ public sealed class CommandLineParser
     private static readonly HashSet<string> KnownOptions = new(BooleanOptions, StringComparer.OrdinalIgnoreCase)
     {
         "scene",
+        "target",
         "blueprint",
         "blueprint-output",
         "description",
@@ -39,7 +40,8 @@ public sealed class CommandLineParser
         "project",
         "new",
         "login",
-        "title"
+        "title",
+        "resume"
     };
 
     public ParseResult Parse(string[] args, string? newBlueprintOverride = null)
@@ -150,6 +152,43 @@ public sealed class CommandLineParser
             return ParseResult.Help();
         }
 
+        RecoveryManifest? recovery = null;
+        if (values.TryGetValue("resume", out string? recoveryPath))
+        {
+            if (operation != OperationMode.Deploy)
+                return ParseResult.Failure("--resume is only valid with the deploy command.");
+            string[] conflicting =
+            [
+                "scene",
+                "target",
+                "blueprint",
+                "new",
+                "title",
+                "description",
+                "thumbnail",
+                "capacity",
+                "recommended-capacity",
+                "tag",
+                "remove-tag",
+                "platform"
+            ];
+            string? conflict = conflicting.FirstOrDefault(values.ContainsKey);
+            if (conflict == null && hasTags) conflict = "tag";
+            if (conflict == null && hasRemovedTags) conflict = "remove-tag";
+            if (conflict != null)
+                return ParseResult.Failure($"--resume restores content settings from its manifest and cannot be combined with --{conflict}.");
+            try
+            {
+                string fullRecoveryPath = Path.GetFullPath(recoveryPath!);
+                recovery = RecoveryManifestFile.Load(fullRecoveryPath);
+                ApplyRecovery(values, tags, ref hasTags, recovery);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException or NotSupportedException)
+            {
+                return ParseResult.Failure("Unable to load --resume manifest: " + exception.Message);
+            }
+        }
+
         int outputModes = (values.ContainsKey("tui") ? 1 : 0) +
                           (values.ContainsKey("plain") ? 1 : 0) +
                           (values.ContainsKey("json") ? 1 : 0);
@@ -180,7 +219,7 @@ public sealed class CommandLineParser
             return ParseResult.Failure("Set VRCLI_USERNAME or provide --login <username-or-email>.");
         }
 
-        if (operation == OperationMode.Deploy && isNew && !string.IsNullOrWhiteSpace(blueprint))
+        if (operation == OperationMode.Deploy && isNew && recovery == null && !string.IsNullOrWhiteSpace(blueprint))
         {
             return ParseResult.Failure(
                 "Choose one target: --new cannot be combined with --blueprint, VRCLI_BLUEPRINT_ID, or a configured Blueprint ID.");
@@ -200,8 +239,16 @@ public sealed class CommandLineParser
         }
         if (operation == OperationMode.Meta)
         {
+            if (values.ContainsKey("target"))
+                return ParseResult.Failure("--target is only valid with deploy or check.");
             if (string.IsNullOrWhiteSpace(blueprint))
-                return ParseResult.Failure("The meta command requires --blueprint <wrld_id>.");
+                return ParseResult.Failure("The meta command requires --blueprint <wrld_id-or-avtr_id>.");
+            if (!blueprint.StartsWith("wrld_", StringComparison.Ordinal) &&
+                !blueprint.StartsWith("avtr_", StringComparison.Ordinal))
+                return ParseResult.Failure("The meta command requires a Blueprint ID beginning with 'wrld_' or 'avtr_'.");
+            if (blueprint.StartsWith("avtr_", StringComparison.Ordinal) &&
+                (hasCapacity || hasRecommendedCapacity))
+                return ParseResult.Failure("--capacity and --recommended-capacity are only valid for world metadata.");
             if (!hasMetadata)
             {
                 return ParseResult.Failure(
@@ -227,6 +274,10 @@ public sealed class CommandLineParser
             return ParseResult.Failure("--blueprint-output is only valid with the deploy command.");
         }
 
+        string? targetPath = Get(values, "target");
+        if (targetPath != null && string.IsNullOrWhiteSpace(targetPath))
+            return ParseResult.Failure("--target must be a non-empty Unity Hierarchy path.");
+
         if (isNew)
         {
             List<string> missingMetadata = new();
@@ -244,11 +295,13 @@ public sealed class CommandLineParser
             {
                 return ParseResult.Failure("The internally preserved new-world Blueprint ID is invalid.");
             }
-            blueprint = newBlueprintOverride ?? "wrld_" + Guid.NewGuid();
+            blueprint = recovery?.Blueprint ?? newBlueprintOverride ?? "wrld_" + Guid.NewGuid();
         }
-        if (!string.IsNullOrWhiteSpace(blueprint) && !blueprint.StartsWith("wrld_", StringComparison.Ordinal))
+        if (!string.IsNullOrWhiteSpace(blueprint) &&
+            !blueprint.StartsWith("wrld_", StringComparison.Ordinal) &&
+            !blueprint.StartsWith("avtr_", StringComparison.Ordinal))
         {
-            return ParseResult.Failure("--blueprint must be a VRChat world ID beginning with 'wrld_'.");
+            return ParseResult.Failure("--blueprint must be a VRChat content ID beginning with 'wrld_' or 'avtr_'.");
         }
         blueprint ??= string.Empty;
 
@@ -269,13 +322,6 @@ public sealed class CommandLineParser
         }
 
         string? password = Get(values, "password") ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.Password);
-        bool hasSavedSession = !string.IsNullOrWhiteSpace(
-            Environment.GetEnvironmentVariable(DeploymentEnvironment.AuthToken));
-
-        if (string.IsNullOrEmpty(password) && !hasSavedSession)
-        {
-            return ParseResult.Failure("Set VRCLI_PASSWORD or provide --password <password>.");
-        }
         password ??= string.Empty;
 
         if (!TryParseTimeout(Get(values, "timeout"), out TimeSpan timeout, out string? timeoutError))
@@ -352,6 +398,7 @@ public sealed class CommandLineParser
             password,
             platform,
             Get(values, "scene"),
+            targetPath,
             Get(values, "unity"),
             twoFactorCode,
             twoFactorMethod,
@@ -363,9 +410,36 @@ public sealed class CommandLineParser
             values.ContainsKey("verbose"),
             values.ContainsKey("tui") ? TerminalMode.Tui :
             values.ContainsKey("plain") ? TerminalMode.Plain :
-            values.ContainsKey("json") ? TerminalMode.Json : TerminalMode.Auto);
+            values.ContainsKey("json") ? TerminalMode.Json : TerminalMode.Auto,
+            recovery);
 
         return ParseResult.Success(options);
+    }
+
+    private static void ApplyRecovery(
+        IDictionary<string, string?> values,
+        ICollection<string> tags,
+        ref bool hasTags,
+        RecoveryManifest recovery)
+    {
+        if (!values.ContainsKey("project")) values["project"] = recovery.ProjectPath;
+        values["blueprint"] = recovery.Blueprint;
+        values["platform"] = recovery.Platform;
+        if (!string.IsNullOrWhiteSpace(recovery.ScenePath)) values["scene"] = recovery.ScenePath;
+        if (!string.IsNullOrWhiteSpace(recovery.TargetPath)) values["target"] = recovery.TargetPath;
+        if (recovery.IsNew) values["new"] = "true";
+        if (recovery.UpdateTitle || recovery.IsNew) values["title"] = recovery.Title;
+        if (recovery.UpdateDescription || recovery.IsNew) values["description"] = recovery.Description;
+        if (recovery.UpdateThumbnail || recovery.IsNew) values["thumbnail"] = recovery.ThumbnailPath;
+        if (recovery.UpdateCapacity || recovery.IsNew)
+            values["capacity"] = recovery.Capacity.ToString(CultureInfo.InvariantCulture);
+        if (recovery.UpdateRecommendedCapacity || recovery.IsNew)
+            values["recommended-capacity"] = recovery.RecommendedCapacity.ToString(CultureInfo.InvariantCulture);
+        if (recovery.UpdateTags || recovery.IsNew)
+        {
+            foreach (string tag in recovery.Tags ?? []) tags.Add(tag);
+            hasTags = true;
+        }
     }
 
     private static bool TryParseOperation(string value, out OperationMode operation)
@@ -431,6 +505,7 @@ public sealed class CommandLineParser
             if (!values.ContainsKey("blueprint") && config.NewWorld == true)
                 values["new"] = "true";
             SetMissing(values, "scene", config.Scene);
+            SetMissing(values, "target", config.Target);
             SetMissing(values, "platform", config.Platform);
             SetMissing(values, "login", config.Login);
             SetMissing(values, "title", config.Title);

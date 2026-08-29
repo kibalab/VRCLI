@@ -16,7 +16,7 @@ public static class InteractiveMetadataEditor
         CancellationToken cancellationToken = default)
     {
         using WizardTerminalScreen screen = new(cancellationToken);
-        screen.SetRoute("ACCOUNT", "WORLD", "EDIT");
+        screen.SetRoute("ACCOUNT", "CONTENT", "EDIT");
         screen.Enter();
         int savedUpdates = 0;
 
@@ -29,35 +29,50 @@ public static class InteractiveMetadataEditor
 
             while (true)
             {
-                screen.SetSection("02", "WORLD", "Open an existing world owned by the signed-in account.");
+                screen.SetSection("02", "CONTENT", "Open an existing world or avatar owned by the signed-in account.");
                 screen.AddSummary("Account", user.DisplayName + "  ·  session active");
-                string worldId = ReadRequired(
+                string blueprint = ReadRequired(
                     screen,
-                    "Blueprint ID (wrld_...)",
-                    validate: value => value.StartsWith("wrld_", StringComparison.Ordinal));
-                screen.SetBusy("Loading the current world metadata…");
-                WorldMetadataSnapshot current;
+                    "Blueprint ID (wrld_... or avtr_...)",
+                    validate: value => value.StartsWith("wrld_", StringComparison.Ordinal) ||
+                                       value.StartsWith("avtr_", StringComparison.Ordinal));
+                screen.SetBusy("Loading the current content metadata…");
                 try
                 {
-                    current = await api.GetWorldAsync(worldId, cancellationToken);
-                    api.EnsureOwner(current);
+                    bool chooseAnother;
+                    if (blueprint.StartsWith("wrld_", StringComparison.Ordinal))
+                    {
+                        WorldMetadataSnapshot current = await api.GetWorldAsync(blueprint, cancellationToken);
+                        api.EnsureOwner(current);
+                        chooseAnother = await EditWorldAsync(
+                            screen,
+                            api,
+                            user,
+                            current,
+                            () => savedUpdates++,
+                            cancellationToken);
+                    }
+                    else
+                    {
+                        AvatarMetadataSnapshot current = await api.GetAvatarAsync(blueprint, cancellationToken);
+                        api.EnsureOwner(current);
+                        chooseAnother = await EditAvatarAsync(
+                            screen,
+                            api,
+                            user,
+                            current,
+                            () => savedUpdates++,
+                            cancellationToken);
+                    }
+                    if (!chooseAnother) break;
                 }
                 catch (VrchatApiException exception)
                 {
-                    screen.SetContext(["Could not open world · " + exception.Message, "The authenticated session is still active."]);
-                    int action = screen.ReadChoice("World could not be opened", ["Try another Blueprint ID", "Exit metadata session"]);
+                    screen.SetContext(["Could not open content · " + exception.Message, "The authenticated session is still active."]);
+                    int action = screen.ReadChoice("Content could not be opened", ["Try another Blueprint ID", "Exit metadata session"]);
                     if (action == 0) continue;
                     break;
                 }
-
-                bool chooseAnotherWorld = await EditWorldAsync(
-                    screen,
-                    api,
-                    user,
-                    current,
-                    () => savedUpdates++,
-                    cancellationToken);
-                if (!chooseAnotherWorld) break;
             }
 
             screen.SetSection("03", "EDIT", "Metadata session complete.");
@@ -65,16 +80,14 @@ public static class InteractiveMetadataEditor
             [
                 ("Account", user.DisplayName),
                 ("Updates", savedUpdates.ToString(CultureInfo.InvariantCulture)),
-                ("Session", OperatingSystem.IsWindows()
-                    ? "Saved in Windows Credential Manager"
-                    : "Kept only for this process")
+                ("Session", "Saved in " + VrchatSessionStore.StorageDescription)
             ]);
             await Task.Delay(500, cancellationToken);
             return ExitCodes.Success;
         }
         catch (OperationCanceledException)
         {
-            return ExitCodes.Success;
+            return ExitCodes.Canceled;
         }
         catch (Exception exception) when (exception is VrchatApiException or HttpRequestException or TaskCanceledException)
         {
@@ -96,7 +109,7 @@ public static class InteractiveMetadataEditor
         {
             savedSessions = store.List();
         }
-        catch (Win32Exception exception)
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or InvalidDataException)
         {
             savedSessions = [];
             screen.SetNotice("Saved sessions could not be read · " + exception.Message);
@@ -135,7 +148,7 @@ public static class InteractiveMetadataEditor
                 {
                     store.Delete(saved.UserId);
                 }
-                catch (Win32Exception)
+                catch (Exception storeException) when (storeException is Win32Exception or InvalidOperationException or InvalidDataException)
                 {
                 }
                 screen.SetNotice(saved.DisplayName + " session expired · " + exception.Message);
@@ -205,7 +218,7 @@ public static class InteractiveMetadataEditor
         {
             store.Save(session);
         }
-        catch (Win32Exception exception)
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or InvalidDataException)
         {
             screen.SetNotice("Signed in, but the session could not be saved · " + exception.Message);
         }
@@ -383,6 +396,154 @@ public static class InteractiveMetadataEditor
         }
     }
 
+    private static async Task<bool> EditAvatarAsync(
+        WizardTerminalScreen screen,
+        VrchatApiClient api,
+        VrchatUser user,
+        AvatarMetadataSnapshot initial,
+        Action onSaved,
+        CancellationToken cancellationToken)
+    {
+        AvatarMetadataSnapshot current = initial;
+        AvatarMetadataSnapshot draft = current;
+        string? thumbnailPath = null;
+        IReadOnlyList<string> detailLog = [$"Loaded {current.Title} · server version {current.Version}"];
+
+        while (true)
+        {
+            screen.SetSection("03", "EDIT", "Choose a field directly. Save, then continue editing without signing in again.");
+            screen.ShowReview(
+            [
+                ("Account", user.DisplayName + "  ·  session active"),
+                ("Avatar", draft.Title + "  ·  " + draft.Id),
+                ("Version", current.Version.ToString(CultureInfo.InvariantCulture)),
+                ("Pending", PendingCount(current, draft, thumbnailPath) + " change(s)")
+            ]);
+            screen.SetContext(detailLog);
+
+            int selected = screen.ReadChoice(
+                "Metadata editor",
+                [
+                    MarkChanged("Title", current.Title != draft.Title, Short(draft.Title)),
+                    MarkChanged("Description", current.Description != draft.Description, Short(draft.Description)),
+                    MarkChanged("Thumbnail", thumbnailPath != null, thumbnailPath == null ? "unchanged" : Path.GetFileName(thumbnailPath)),
+                    MarkChanged("Manage tags", !current.Tags.SequenceEqual(draft.Tags, StringComparer.Ordinal), draft.Tags.Count + " total"),
+                    "Save pending changes",
+                    "Choose another content",
+                    "Exit metadata session"
+                ]);
+
+            switch (selected)
+            {
+                case 0:
+                    {
+                        string value = ReadRequired(screen, "Avatar title", draft.Title);
+                        detailLog = DraftLog("Title", draft.Title, value);
+                        draft = draft with { Title = value };
+                        break;
+                    }
+                case 1:
+                    {
+                        string value = screen.ReadText("Description (empty clears it)", null, secret: false, acceptEmpty: true);
+                        detailLog = DraftLog("Description", draft.Description, value);
+                        draft = draft with { Description = value };
+                        break;
+                    }
+                case 2:
+                    {
+                        if (thumbnailPath != null)
+                        {
+                            int action = screen.ReadChoice(
+                                "Pending thumbnail change",
+                                ["Choose a different image", "Discard thumbnail change", "Keep current draft"]);
+                            if (action == 1)
+                            {
+                                thumbnailPath = null;
+                                detailLog = ["Draft · Thumbnail change discarded; server image is unchanged."];
+                                break;
+                            }
+                            if (action == 2) break;
+                        }
+                        string value = ReadRequired(screen, "PNG or JPEG path", thumbnailPath, IsImageFile);
+                        thumbnailPath = Path.GetFullPath(value);
+                        detailLog = ["Draft · Thumbnail: " + (current.ImageUrl ?? "(none)"), "      → " + thumbnailPath];
+                        break;
+                    }
+                case 3:
+                    {
+                        int action = screen.ReadChoice("Tag management", ["Add tags", "Remove one tag", "Replace all tags", "Back to metadata"]);
+                        if (action == 3) break;
+                        IReadOnlyList<string> tags = draft.Tags;
+                        if (action == 0)
+                            tags = tags.Concat(ParseTags(ReadRequired(screen, "Tags to add (comma-separated)"))).Distinct(StringComparer.Ordinal).ToArray();
+                        else if (action == 1 && tags.Count > 0)
+                        {
+                            int tag = screen.ReadChoice("Tag to remove", tags.Append("Back").ToArray());
+                            if (tag < tags.Count) tags = tags.Where((_, index) => index != tag).ToArray();
+                        }
+                        else if (action == 2)
+                            tags = ParseTags(screen.ReadText("Replacement tags (comma-separated; empty clears all)", null, false, true));
+                        detailLog = DraftLog("Tags", DisplayTags(draft.Tags), DisplayTags(tags));
+                        draft = draft with { Tags = tags };
+                        break;
+                    }
+                case 4:
+                    {
+                        IReadOnlyList<MetadataChange> planned = VrchatApiClient.Compare(current, draft, thumbnailPath);
+                        if (planned.Count == 0)
+                        {
+                            detailLog = ["No pending changes. Choose a field before saving."];
+                            break;
+                        }
+                        screen.SetContext(planned.Select(MetadataApplication.FormatChange));
+                        if (!screen.ReadYesNo("Apply these changes now", true))
+                        {
+                            detailLog = ["Save cancelled; draft values are still available."];
+                            break;
+                        }
+                        screen.SetBusy("Updating avatar metadata without starting Unity…");
+                        try
+                        {
+                            AvatarMetadataSnapshot updated = await api.UpdateAvatarAsync(
+                                current,
+                                draft,
+                                thumbnailPath,
+                                screen.SetBusy,
+                                cancellationToken);
+                            IReadOnlyList<MetadataChange> applied = VrchatApiClient.Compare(current, updated);
+                            if (thumbnailPath != null)
+                                applied = applied.Append(new MetadataChange("Thumbnail", current.ImageUrl ?? "(none)", updated.ImageUrl ?? Path.GetFileName(thumbnailPath))).ToArray();
+                            detailLog = applied.Select(change => "Saved · " + MetadataApplication.FormatChange(change))
+                                .Append("Server version " + current.Version + " → " + updated.Version)
+                                .Take(4)
+                                .ToArray();
+                            current = updated;
+                            draft = updated;
+                            thumbnailPath = null;
+                            onSaved();
+                        }
+                        catch (VrchatApiException exception)
+                        {
+                            detailLog = ["Save failed · " + exception.Message, "The login session and pending draft are still active; choose Save to retry."];
+                        }
+                        break;
+                    }
+                case 5:
+                    if (PendingCount(current, draft, thumbnailPath) == 0 ||
+                        screen.ReadYesNo("Discard pending changes and choose another content", false))
+                        return true;
+                    detailLog = ["Pending changes kept. Save or discard them before changing content."];
+                    break;
+                case 6:
+                    if (PendingCount(current, draft, thumbnailPath) == 0 ||
+                        screen.ReadYesNo("Discard pending changes and exit", false))
+                        return false;
+                    detailLog = ["Pending changes kept. Save them or choose Exit again to discard."];
+                    break;
+            }
+        }
+    }
+
     private static InteractiveTwoFactorAnswer ReadTwoFactor(
         WizardTerminalScreen screen,
         IReadOnlyList<string> methods)
@@ -477,6 +638,9 @@ public static class InteractiveMetadataEditor
     }
 
     private static int PendingCount(WorldMetadataSnapshot current, WorldMetadataSnapshot draft, string? thumbnailPath) =>
+        VrchatApiClient.Compare(current, draft, thumbnailPath).Count;
+
+    private static int PendingCount(AvatarMetadataSnapshot current, AvatarMetadataSnapshot draft, string? thumbnailPath) =>
         VrchatApiClient.Compare(current, draft, thumbnailPath).Count;
 
     private static string MarkChanged(string label, bool changed, string value) =>

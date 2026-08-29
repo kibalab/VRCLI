@@ -99,7 +99,7 @@ public static class InteractiveWizard
         {
             savedSessions = store.List();
         }
-        catch (Win32Exception exception)
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or InvalidDataException)
         {
             savedSessions = [];
             screen.SetNotice("Saved sessions could not be read · " + exception.Message);
@@ -136,7 +136,7 @@ public static class InteractiveWizard
                 {
                     store.Delete(saved.UserId);
                 }
-                catch (Win32Exception)
+                catch (Exception storeException) when (storeException is Win32Exception or InvalidOperationException or InvalidDataException)
                 {
                 }
                 screen.SetNotice(saved.DisplayName + " session expired · " + exception.Message);
@@ -212,7 +212,7 @@ public static class InteractiveWizard
         {
             store.Save(session);
         }
-        catch (Win32Exception exception)
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or InvalidDataException)
         {
             screen.SetNotice("Signed in, but the session could not be saved · " + exception.Message);
         }
@@ -235,11 +235,13 @@ public static class InteractiveWizard
         int capacity = 32;
         int recommended = 16;
         string blueprintOutput = string.Empty;
+        ProjectContentType contentType = ProjectContentType.World;
+        bool avatarIsNew = false;
         int editSection = 0;
 
         while (true)
         {
-            WriteSection("02", "DEPLOYMENT", "Choose the project, target world, scene, and platform.");
+            WriteSection("02", "DEPLOYMENT", "Choose a World or Avatar project, scene, and platform.");
             if (projectPath == null || editSection == 1)
             {
                 projectPath = PromptRequired(
@@ -247,36 +249,47 @@ public static class InteractiveWizard
                     projectPath ?? Directory.GetCurrentDirectory(),
                     IsUnityProject);
                 scene = PromptScene(projectPath);
+                contentType = ProjectInspector.Inspect(projectPath, scene).ContentType!.Value;
+                IReadOnlyList<string> sceneBlueprints = ProjectInspector.FindSceneBlueprints(projectPath, scene, contentType);
+                avatarIsNew = contentType == ProjectContentType.Avatar && sceneBlueprints.Count == 0;
                 activeScreen?.AddSummary("Project", projectPath);
                 activeScreen?.AddSummary("Scene", scene);
+                activeScreen?.AddSummary("Content", contentType.ToString());
             }
             if (editSection is 0 or 2)
             {
-                mode = PromptChoice("Deployment mode", ["Update an existing world", "Create a new private world"]);
-                activeScreen?.AddSummary("Mode", mode == 0 ? "Update existing world" : "Create new private world");
-                if (mode == 0)
+                if (contentType == ProjectContentType.World)
                 {
-                    blueprint = PromptOptionalBlueprint();
-                    activeScreen?.AddSummary(
-                        "Target",
-                        string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint);
+                    mode = PromptChoice("Deployment mode", ["Update an existing world", "Create a new private world"]);
+                    activeScreen?.AddSummary("Mode", mode == 0 ? "Update existing world" : "Create new private world");
+                    if (mode == 0)
+                    {
+                        blueprint = PromptOptionalBlueprint(contentType);
+                        activeScreen?.AddSummary("Target", string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint);
+                    }
+                    else
+                    {
+                        name = PromptRequired("World name", string.IsNullOrWhiteSpace(name) ? null : name);
+                        description = Prompt("Description", string.IsNullOrWhiteSpace(description) ? null : description);
+                        thumbnail = PromptRequired("Thumbnail path", string.IsNullOrWhiteSpace(thumbnail) ? null : thumbnail, File.Exists);
+                        capacity = PromptInteger("Maximum capacity", capacity, 1, int.MaxValue);
+                        recommended = PromptInteger("Recommended capacity", Math.Min(recommended, capacity), 1, capacity);
+                        blueprintOutput = Prompt("Blueprint output file", string.IsNullOrWhiteSpace(blueprintOutput) ? Path.Combine(projectPath, "blueprint.txt") : blueprintOutput);
+                        activeScreen?.AddSummary("Target", name + " (new private world)");
+                    }
                 }
                 else
                 {
-                    name = PromptRequired("World name", string.IsNullOrWhiteSpace(name) ? null : name);
-                    description = Prompt("Description", string.IsNullOrWhiteSpace(description) ? null : description);
-                    thumbnail = PromptRequired(
-                        "Thumbnail path",
-                        string.IsNullOrWhiteSpace(thumbnail) ? null : thumbnail,
-                        File.Exists);
-                    capacity = PromptInteger("Maximum capacity", capacity, 1, int.MaxValue);
-                    recommended = PromptInteger("Recommended capacity", Math.Min(recommended, capacity), 1, capacity);
-                    blueprintOutput = Prompt(
-                        "Blueprint output file",
-                        string.IsNullOrWhiteSpace(blueprintOutput)
-                            ? Path.Combine(projectPath, "blueprint.txt")
-                            : blueprintOutput);
-                    activeScreen?.AddSummary("Target", name + " (new private world)");
+                    mode = 0;
+                    blueprint = PromptOptionalBlueprint(contentType);
+                    if (avatarIsNew)
+                    {
+                        name = PromptRequired("Avatar name", string.IsNullOrWhiteSpace(name) ? null : name);
+                        description = Prompt("Description", string.IsNullOrWhiteSpace(description) ? null : description);
+                        thumbnail = PromptRequired("Thumbnail path", string.IsNullOrWhiteSpace(thumbnail) ? null : thumbnail, File.Exists);
+                        blueprintOutput = Prompt("Blueprint output file", string.IsNullOrWhiteSpace(blueprintOutput) ? Path.Combine(projectPath, "blueprint.txt") : blueprintOutput);
+                    }
+                    activeScreen?.AddSummary("Target", avatarIsNew ? name + " (new private avatar)" : string.IsNullOrWhiteSpace(blueprint) ? "Auto-select after Unity opens" : blueprint);
                 }
             }
             if (editSection is 0 or 3)
@@ -292,7 +305,19 @@ public static class InteractiveWizard
             Add(arguments, "--scene", scene!);
 
             string targetDescription;
-            if (mode == 0)
+            if (contentType == ProjectContentType.Avatar)
+            {
+                if (!string.IsNullOrWhiteSpace(blueprint)) Add(arguments, "--blueprint", blueprint);
+                if (avatarIsNew)
+                {
+                    Add(arguments, "--title", name);
+                    if (!string.IsNullOrWhiteSpace(description)) Add(arguments, "--description", description);
+                    Add(arguments, "--thumbnail", thumbnail);
+                    if (!string.IsNullOrWhiteSpace(blueprintOutput)) Add(arguments, "--blueprint-output", blueprintOutput);
+                }
+                targetDescription = avatarIsNew ? name + " (new private avatar)" : string.IsNullOrWhiteSpace(blueprint) ? "Auto-select after Unity opens" : blueprint;
+            }
+            else if (mode == 0)
             {
                 if (!string.IsNullOrWhiteSpace(blueprint)) Add(arguments, "--blueprint", blueprint);
                 targetDescription = string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint;
@@ -361,6 +386,7 @@ public static class InteractiveWizard
         string? projectPath = null;
         string? scene = null;
         string blueprint = string.Empty;
+        ProjectContentType contentType = ProjectContentType.World;
         int platform = 0;
         int editSection = 0;
         while (true)
@@ -373,15 +399,19 @@ public static class InteractiveWizard
                     projectPath ?? Directory.GetCurrentDirectory(),
                     IsUnityProject);
                 scene = PromptScene(projectPath);
+                contentType = ProjectInspector.Inspect(projectPath, scene).ContentType!.Value;
                 activeScreen?.AddSummary("Project", projectPath);
                 activeScreen?.AddSummary("Scene", scene);
+                activeScreen?.AddSummary("Content", contentType.ToString());
             }
             if (editSection is 0 or 2)
             {
-                blueprint = PromptOptionalBlueprint();
+                blueprint = PromptOptionalBlueprint(contentType);
                 activeScreen?.AddSummary(
                     "Target",
-                    string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint);
+                    string.IsNullOrWhiteSpace(blueprint)
+                        ? contentType == ProjectContentType.Avatar ? "Auto-select after Unity opens" : "Scene PipelineManager"
+                        : blueprint);
             }
             if (editSection is 0 or 3)
             {
@@ -402,7 +432,9 @@ public static class InteractiveWizard
                 [
                     ("Account", username),
                     ("Auth", authenticationDescription),
-                    ("Target", string.IsNullOrWhiteSpace(blueprint) ? "Scene PipelineManager" : blueprint),
+                    ("Target", string.IsNullOrWhiteSpace(blueprint)
+                        ? contentType == ProjectContentType.Avatar ? "Auto-select after Unity opens" : "Scene PipelineManager"
+                        : blueprint),
                     ("Project", projectPath),
                     ("Scene", scene!),
                     ("Platform", platformName)
@@ -422,14 +454,17 @@ public static class InteractiveWizard
         }
     }
 
-    private static string PromptOptionalBlueprint()
+    private static string PromptOptionalBlueprint(ProjectContentType contentType)
     {
+        string prefix = contentType == ProjectContentType.World ? "wrld_" : "avtr_";
         while (true)
         {
-            string blueprint = Prompt("Blueprint override (blank uses the scene)");
-            if (string.IsNullOrWhiteSpace(blueprint) || blueprint.StartsWith("wrld_", StringComparison.Ordinal))
+            string blueprint = Prompt(contentType == ProjectContentType.Avatar
+                ? "Blueprint (blank auto-selects the scene avatar)"
+                : "Blueprint override (blank uses the scene)");
+            if (string.IsNullOrWhiteSpace(blueprint) || blueprint.StartsWith(prefix, StringComparison.Ordinal))
                 return blueprint;
-            activeScreen?.SetNotice("Enter a world ID beginning with wrld_, or leave it blank.");
+            activeScreen?.SetNotice("Enter a " + contentType.ToString().ToLowerInvariant() + " ID beginning with " + prefix + ", or leave it blank.");
         }
     }
 
@@ -474,7 +509,7 @@ public static class InteractiveWizard
         int width = LayoutWidth();
         Console.WriteLine();
         Console.WriteLine("  " + Paint("╭─ ◆ VRCLI " + new string('─', Math.Max(1, width - 10)) + "╮", "36;1"));
-        Console.WriteLine("  " + Paint("│", "36") + "  VRChat world deployment".PadRight(width) + Paint("│", "36"));
+        Console.WriteLine("  " + Paint("│", "36") + "  VRChat content deployment".PadRight(width) + Paint("│", "36"));
         Console.WriteLine("  " + Paint("│", "36") + Paint("  ACCOUNT  →  DEPLOYMENT  →  REVIEW".PadRight(width), "90") + Paint("│", "36"));
         Console.WriteLine("  " + Paint("╰" + new string('─', width) + "╯", "36"));
         Console.WriteLine();

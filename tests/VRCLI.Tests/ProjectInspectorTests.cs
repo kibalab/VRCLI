@@ -15,6 +15,47 @@ public sealed class ProjectInspectorTests : IDisposable
 
         Assert.True(result.IsValid, result.Error);
         Assert.Null(result.ScenePath);
+        Assert.Equal(ProjectContentType.World, result.ContentType);
+    }
+
+    [Fact]
+    public void DetectsAvatarSdkProject()
+    {
+        CreateProject(ProjectContentType.Avatar);
+
+        ProjectInspectionResult result = ProjectInspector.Inspect(projectPath, null, requireScene: false);
+
+        Assert.True(result.IsValid, result.Error);
+        Assert.Equal(ProjectContentType.Avatar, result.ContentType);
+    }
+
+    [Fact]
+    public void RejectsAmbiguousSdkProject()
+    {
+        CreateProject();
+        File.WriteAllText(
+            Path.Combine(projectPath, "Packages", "vpm-manifest.json"),
+            "{\"dependencies\":{\"com.vrchat.worlds\":\"3.9.0\",\"com.vrchat.avatars\":\"3.9.0\"}}");
+
+        ProjectInspectionResult result = ProjectInspector.Inspect(projectPath, null, requireScene: false);
+
+        Assert.False(result.IsValid);
+        Assert.Contains("Both VRChat Worlds and Avatars", result.Error);
+    }
+
+    [Fact]
+    public void FindsAvatarBlueprintsInSceneYaml()
+    {
+        CreateProject(ProjectContentType.Avatar);
+        string scene = Path.Combine(projectPath, "Assets", "Scenes", "Avatar.unity");
+        File.WriteAllText(scene, "  blueprintId: avtr_one\n  blueprintId: avtr_one\n  blueprintId: avtr_two\n");
+
+        IReadOnlyList<string> blueprints = ProjectInspector.FindSceneBlueprints(
+            projectPath,
+            "Assets/Scenes/Avatar.unity",
+            ProjectContentType.Avatar);
+
+        Assert.Equal(["avtr_one", "avtr_two"], blueprints);
     }
 
     [Fact]
@@ -80,12 +121,15 @@ public sealed class ProjectInspectorTests : IDisposable
         Assert.Contains("--scene", result.Error);
     }
 
-    private void CreateProject()
+    private void CreateProject(ProjectContentType contentType = ProjectContentType.World)
     {
         Directory.CreateDirectory(Path.Combine(projectPath, "Assets", "Scenes"));
         Directory.CreateDirectory(Path.Combine(projectPath, "Packages"));
         Directory.CreateDirectory(Path.Combine(projectPath, "ProjectSettings"));
-        File.WriteAllText(Path.Combine(projectPath, "Packages", "vpm-manifest.json"), "{}");
+        string packageName = contentType == ProjectContentType.World ? "com.vrchat.worlds" : "com.vrchat.avatars";
+        File.WriteAllText(
+            Path.Combine(projectPath, "Packages", "vpm-manifest.json"),
+            "{\"dependencies\":{\"" + packageName + "\":\"3.9.0\"}}");
         File.WriteAllText(
             Path.Combine(projectPath, "ProjectSettings", "ProjectVersion.txt"),
             "m_EditorVersion: 2022.3.22f1\n");

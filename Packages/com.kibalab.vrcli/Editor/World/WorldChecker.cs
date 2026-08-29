@@ -1,11 +1,8 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.UIElements;
 using VRC.Editor;
 using VRC.Core;
 using VRC.SDK3.Editor;
@@ -33,7 +30,7 @@ namespace KibaLab.WorldDeployment.Editor
             {
                 report.AddError("Android texture compression must be ASTC for VRChat uploads.");
             }
-            WorldDeployer.OpenScene(scenePath);
+            ContentScene.Open(scenePath);
 
             VRC_SceneDescriptor descriptor = UnityEngine.Object.FindObjectOfType<VRC_SceneDescriptor>();
             if (descriptor == null)
@@ -49,6 +46,7 @@ namespace KibaLab.WorldDeployment.Editor
                 report.AddError("PipelineManager was not found in the selected scene.");
                 return report;
             }
+            DeploymentLog.Phase("TARGET", "Selected the world descriptor from the requested scene.");
 
             string blueprintId = string.IsNullOrWhiteSpace(request.BlueprintId)
                 ? pipeline.blueprintId
@@ -92,16 +90,11 @@ namespace KibaLab.WorldDeployment.Editor
             {
                 try
                 {
-                    builder.CreateValidationsGUI(new VisualElement());
-                    CollectSdkIssues(builder, "GUIErrors", report.AddError);
-                    CollectSdkIssues(builder, "GUIWarnings", report.AddWarning);
-                    CollectSdkIssues(builder, "GUIInfos", report.AddInformation);
-                    CollectSdkIssues(builder, "GUILinks", report.AddInformation);
-                    CollectSdkIssues(builder, "GUIStats", report.AddInformation);
+                    SdkDiagnostics.Collect(builder, report);
                 }
                 catch (Exception exception)
                 {
-                    report.AddError("VRChat SDK validation could not complete: " + Unwrap(exception).Message);
+                    report.AddError("VRChat SDK validation could not complete: " + exception.GetBaseException().Message);
                 }
             }
 
@@ -115,70 +108,5 @@ namespace KibaLab.WorldDeployment.Editor
             return report;
         }
 
-        private static void CollectSdkIssues(
-            IVRCSdkWorldBuilderApi builder,
-            string fieldName,
-            Action<string> add)
-        {
-            FieldInfo panelField = FindField(builder.GetType(), "_builder");
-            object panel = panelField != null ? panelField.GetValue(builder) : null;
-            if (panel == null) throw new InvalidOperationException("The VRChat SDK validation panel is unavailable.");
-
-            FieldInfo issuesField = FindField(panel.GetType(), fieldName);
-            IDictionary issues = issuesField != null ? issuesField.GetValue(panel) as IDictionary : null;
-            if (issues == null) throw new InvalidOperationException("The VRChat SDK " + fieldName + " report is unavailable.");
-
-            foreach (DictionaryEntry entry in issues)
-            {
-                IEnumerable entries = entry.Value as IEnumerable;
-                if (entries == null) continue;
-                foreach (object issue in entries)
-                {
-                    FieldInfo textField = issue.GetType().GetField("issueText", BindingFlags.Instance | BindingFlags.Public);
-                    string text = textField != null ? textField.GetValue(issue) as string : null;
-                    if (!string.IsNullOrWhiteSpace(text)) add(text.Replace('\r', ' ').Replace('\n', ' ').Trim());
-                }
-            }
-        }
-
-        private static FieldInfo FindField(Type type, string name)
-        {
-            while (type != null)
-            {
-                FieldInfo field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (field != null) return field;
-                type = type.BaseType;
-            }
-            return null;
-        }
-
-        private static Exception Unwrap(Exception exception)
-        {
-            TargetInvocationException invocation = exception as TargetInvocationException;
-            return invocation != null && invocation.InnerException != null ? invocation.InnerException : exception;
-        }
-    }
-
-    internal sealed class CheckReport
-    {
-        private readonly List<string> errors = new List<string>();
-        private readonly List<string> warnings = new List<string>();
-        private readonly List<string> information = new List<string>();
-
-        public IReadOnlyList<string> Errors => errors;
-        public IReadOnlyList<string> Warnings => warnings;
-        public IReadOnlyList<string> Information => information;
-        public string Blueprint { get; set; }
-        public bool Success => errors.Count == 0;
-
-        public void AddError(string message) => Add(errors, message);
-        public void AddWarning(string message) => Add(warnings, message);
-        public void AddInformation(string message) => Add(information, message);
-
-        private static void Add(List<string> destination, string message)
-        {
-            if (string.IsNullOrWhiteSpace(message) || destination.Contains(message)) return;
-            destination.Add(message);
-        }
     }
 }

@@ -4,6 +4,7 @@ namespace KibaLab.WorldDeployment
     {
         public const string Project = "VRCLI_PROJECT";
         public const string Operation = "VRCLI_OPERATION";
+        public const string ContentType = "VRCLI_CONTENT_TYPE";
         public const string BlueprintId = "VRCLI_BLUEPRINT_ID";
         public const string IsNew = "VRCLI_CREATE_WORLD";
         public const string Username = "VRCLI_USERNAME";
@@ -17,6 +18,12 @@ namespace KibaLab.WorldDeployment
         public const string ResultFile = "VRCLI_RESULT_FILE";
         public const string OwnershipAccepted = "VRCLI_ACCEPT_CONTENT_OWNERSHIP";
         public const string Scene = "VRCLI_SCENE";
+        public const string Target = "VRCLI_TARGET";
+        public const string TargetRequestFile = "VRCLI_TARGET_REQUEST_FILE";
+        public const string TargetResponseFile = "VRCLI_TARGET_RESPONSE_FILE";
+        public const string RecoveryDirectory = "VRCLI_RECOVERY_DIRECTORY";
+        public const string ResumeBundle = "VRCLI_RESUME_BUNDLE";
+        public const string ResumeSignature = "VRCLI_RESUME_SIGNATURE";
         public const string Title = "VRCLI_WORLD_NAME";
         public const string Description = "VRCLI_WORLD_DESCRIPTION";
         public const string Thumbnail = "VRCLI_THUMBNAIL";

@@ -13,5 +13,5 @@ public static class ExitCodes
     public const int NetworkFailed = 70;
     public const int TimedOut = 124;
     public const int UnexpectedError = 125;
+    public const int Canceled = 130;
 }
-

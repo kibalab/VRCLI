@@ -8,7 +8,8 @@ namespace KibaLab.WorldDeployment;
 public sealed class DeploymentApplication(
     TextWriter output,
     TextWriter error,
-    string? newBlueprintOverride = null)
+    string? newBlueprintOverride = null,
+    Func<IVrchatSessionStore>? sessionStoreFactory = null)
 {
     private static readonly JsonSerializerOptions ResultJsonOptions = new() { WriteIndented = true };
     private readonly CommandLineParser parser = new();
@@ -62,7 +63,8 @@ public sealed class DeploymentApplication(
                 Path.AltDirectorySeparatorChar));
             string targetName = options.IsNew
                 ? "New world · " + options.Title
-                : string.IsNullOrWhiteSpace(options.BlueprintId) ? "Scene Blueprint" : options.BlueprintId;
+                : !string.IsNullOrWhiteSpace(options.TargetPath) ? options.TargetPath
+                : string.IsNullOrWhiteSpace(options.BlueprintId) ? "Auto-detect from scene" : options.BlueprintId;
             terminalUi.SetOverview(
                 projectName,
                 targetName,
@@ -97,7 +99,7 @@ public sealed class DeploymentApplication(
         {
             if (terminalUi != null) await terminalUi.FinishAsync(false);
             await error.WriteLineAsync("VRCLI: Cancelled.");
-            return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Authentication cancelled.", options);
+            return await WriteFailureAsync(ExitCodes.Canceled, "cancelled", "Authentication cancelled.", options);
         }
         catch (Exception exception) when (exception is VrchatApiException or HttpRequestException or TaskCanceledException)
         {
@@ -130,6 +132,14 @@ public sealed class DeploymentApplication(
             return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", project.Error!, options);
         }
 
+        string? contentOptionError = ValidateContentOptions(options, project.ContentType!.Value);
+        if (contentOptionError != null)
+        {
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            await error.WriteLineAsync("VRCLI: " + contentOptionError);
+            return await WriteFailureAsync(ExitCodes.InvalidArguments, "arguments", contentOptionError, options, project.ContentType);
+        }
+
         string? unityPath = UnityLocator.Find(project.UnityVersion!, options.UnityPath);
         if (unityPath == null)
         {
@@ -139,13 +149,31 @@ public sealed class DeploymentApplication(
             return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", message, options);
         }
 
+        ProjectOperationLock operationLock;
+        try
+        {
+            operationLock = ProjectOperationLock.Acquire(options.ProjectPath, options.Operation);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            await error.WriteLineAsync("VRCLI: " + exception.Message);
+            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project-lock", exception.Message, options, project.ContentType);
+        }
+        using ProjectOperationLock heldProjectLock = operationLock;
+        await ReportAsync(terminalUi, "BOOT", "Exclusive project operation lock acquired.");
+
         terminalUi?.SetOverview(
             Path.GetFileName(options.ProjectPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+            project.ContentType == ProjectContentType.Avatar
+                ? !string.IsNullOrWhiteSpace(options.TargetPath) ? "Avatar · " + options.TargetPath
+                : !string.IsNullOrWhiteSpace(options.BlueprintId) ? "Avatar · " + options.BlueprintId
+                : "Avatar · Auto-select in Unity" :
             options.IsNew ? "New world · " + options.Title :
             string.IsNullOrWhiteSpace(options.BlueprintId) ? "Scene Blueprint" : options.BlueprintId,
             project.ScenePath ?? "First enabled build scene",
             options.Platform.ToString());
-        await ReportAsync(terminalUi, "BOOT", options.Operation + " request validated; preparing dependencies and Unity bridge.", true);
+        await ReportAsync(terminalUi, "BOOT", project.ContentType + " " + options.Operation.ToString().ToLowerInvariant() + " request validated; preparing dependencies and Unity bridge.", true);
 
         if (!options.SkipVpmResolve)
         {
@@ -166,7 +194,7 @@ public sealed class DeploymentApplication(
             {
                 if (terminalUi != null) await terminalUi.FinishAsync(false);
                 await error.WriteLineAsync("VRCLI: Cancelled.");
-                return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Operation cancelled.", options);
+                return await WriteFailureAsync(ExitCodes.Canceled, "cancelled", "Operation cancelled.", options);
             }
         }
         else
@@ -181,7 +209,10 @@ public sealed class DeploymentApplication(
             await ReportAsync(terminalUi, "BRIDGE", "Unity bridge ready: " + bridge);
 
             UnityProjectConfigurationResult configuration =
-                UnityProjectConfigurator.EnsureVrchatWorldSdkDefines(options.ProjectPath, options.Platform);
+                UnityProjectConfigurator.EnsureVrchatSdkConfiguration(
+                    options.ProjectPath,
+                    options.Platform,
+                    project.ContentType!.Value);
             string configurationMessage = configuration.Changed
                 ? $"Initialized VRChat SDK defines for {configuration.TargetGroup}: " +
                   string.Join(", ", configuration.AddedDefines)
@@ -195,7 +226,17 @@ public sealed class DeploymentApplication(
             return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", exception.Message, options);
         }
 
-        string resultFile = Path.Combine(Path.GetTempPath(), $"vrcli-result-{Guid.NewGuid():N}.json");
+        string operationId = Guid.NewGuid().ToString("N");
+        string recoveryDirectory = options.Recovery != null
+            ? Path.GetDirectoryName(options.Recovery.BundlePath)!
+            : Path.Combine(options.ProjectPath, "Library", "VRCLI", "recovery", operationId);
+        string resultFile = Path.Combine(Path.GetTempPath(), $"vrcli-result-{operationId}.json");
+        string? targetRequestFile = terminalUi == null || Console.IsInputRedirected
+            ? null
+            : Path.Combine(Path.GetTempPath(), $"vrcli-target-request-{operationId}.json");
+        string? targetResponseFile = terminalUi == null || Console.IsInputRedirected
+            ? null
+            : Path.Combine(Path.GetTempPath(), $"vrcli-target-response-{operationId}.txt");
         try
         {
             await ReportAsync(
@@ -209,13 +250,26 @@ public sealed class DeploymentApplication(
                 options,
                 project.ScenePath,
                 resultFile,
-                sessionTokens);
+                sessionTokens,
+                project.ContentType!.Value,
+                targetRequestFile,
+                targetResponseFile,
+                recoveryDirectory);
+            IProcessLineObserver? terminalObserver = terminalUi;
+            if (terminalUi != null && targetRequestFile != null && targetResponseFile != null)
+            {
+                terminalObserver = new TargetSelectionObserver(
+                    targetRequestFile,
+                    targetResponseFile,
+                    terminalUi,
+                    terminalUi);
+            }
             CompilerDiagnosticCollector? compilerDiagnostics = options.Operation == OperationMode.Check
-                ? new CompilerDiagnosticCollector(terminalUi)
+                ? new CompilerDiagnosticCollector(terminalObserver)
                 : null;
             IProcessLineObserver? processObserver = compilerDiagnostics != null
                 ? compilerDiagnostics
-                : terminalUi;
+                : terminalObserver;
             ChildProcessResult result = await ChildProcess.RunAsync(
                 unity,
                 LogOutput,
@@ -251,7 +305,8 @@ public sealed class DeploymentApplication(
                         null,
                         null,
                         compilerErrors,
-                        compilerWarnings);
+                        compilerWarnings,
+                        ContentType: project.ContentType.ToString());
                 }
                 else if (bridgeResult != null)
                 {
@@ -264,6 +319,62 @@ public sealed class DeploymentApplication(
             }
             if (bridgeResult != null)
             {
+                if (bridgeResult.Success && options.Operation == OperationMode.Deploy)
+                {
+                    await ReportAsync(terminalUi, "VERIFY", "Verifying the uploaded platform package with the VRChat server.", true);
+                    try
+                    {
+                        using VrchatApiClient verificationApi = new();
+                        await verificationApi.ResumeSessionAsync(sessionTokens, cancellationToken);
+                        DeploymentVerification verification = await new DeploymentVerifier().VerifyAsync(
+                            verificationApi,
+                            bridgeResult,
+                            authenticatedUser.Id,
+                            options.Platform,
+                            message => Report(terminalUi, "VERIFY", message),
+                            cancellationToken);
+                        bridgeResult = bridgeResult with
+                        {
+                            Success = verification.Success,
+                            ExitCode = verification.Success ? ExitCodes.Success : ExitCodes.UploadFailed,
+                            Stage = verification.Success ? "complete" : "verification",
+                            Message = verification.Success ? bridgeResult.Message : verification.Message,
+                            Verified = verification.Success,
+                            VerificationMessage = verification.Message,
+                            ServerVersion = verification.Content?.Version ?? bridgeResult.ServerVersion
+                        };
+                        await ReportAsync(terminalUi, "VERIFY", verification.Message);
+                        if (verification.Success && !string.IsNullOrWhiteSpace(bridgeResult.Artifact?.RecoveryFile))
+                        {
+                            try
+                            {
+                                RecoveryManifestFile.Complete(bridgeResult.Artifact.RecoveryFile);
+                                bridgeResult = bridgeResult with
+                                {
+                                    Artifact = bridgeResult.Artifact with { RecoveryFile = null }
+                                };
+                                await ReportAsync(terminalUi, "VERIFY", "Removed the verified deployment recovery files.");
+                            }
+                            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+                            {
+                                await ReportAsync(terminalUi, "VERIFY", "Deployment is verified, but recovery cleanup was skipped: " + exception.Message);
+                            }
+                        }
+                    }
+                    catch (Exception exception) when (exception is VrchatApiException or HttpRequestException or TaskCanceledException)
+                    {
+                        bridgeResult = bridgeResult with
+                        {
+                            Success = false,
+                            ExitCode = ExitCodes.NetworkFailed,
+                            Stage = "verification",
+                            Message = "Upload completed, but server verification failed: " + exception.Message,
+                            Verified = false,
+                            VerificationMessage = exception.Message
+                        };
+                    }
+                }
+
                 bool blueprintOutputWritten = false;
                 if (bridgeResult.Success && options.BlueprintOutputPath != null && !string.IsNullOrWhiteSpace(bridgeResult.Blueprint))
                 {
@@ -275,7 +386,7 @@ public sealed class DeploymentApplication(
                     catch (Exception exception)
                     {
                         string message =
-                            "World upload succeeded, but the Blueprint output could not be written: " + exception.Message;
+                            "Content upload succeeded, but the Blueprint output could not be written: " + exception.Message;
                         await error.WriteLineAsync("VRCLI: " + message);
                         DeploymentResult partialFailure = bridgeResult with
                         {
@@ -310,7 +421,7 @@ public sealed class DeploymentApplication(
         {
             if (terminalUi != null) await terminalUi.FinishAsync(false);
             await error.WriteLineAsync("VRCLI: Cancelled.");
-            return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Operation cancelled.", options);
+            return await WriteFailureAsync(ExitCodes.Canceled, "cancelled", "Operation cancelled.", options);
         }
         catch (Exception exception)
         {
@@ -321,6 +432,8 @@ public sealed class DeploymentApplication(
         finally
         {
             if (File.Exists(resultFile)) File.Delete(resultFile);
+            if (targetRequestFile != null && File.Exists(targetRequestFile)) File.Delete(targetRequestFile);
+            if (targetResponseFile != null && File.Exists(targetResponseFile)) File.Delete(targetResponseFile);
         }
     }
 
@@ -342,21 +455,86 @@ public sealed class DeploymentApplication(
         }
         else
         {
-            await ReportAsync(terminalUi, "AUTH", "Validating account credentials with VRChat.", true);
-            user = await VrchatAuthentication.SignInAsync(
-                api,
-                options.Username,
-                options.Password,
-                options.TwoFactorCode,
-                options.TwoFactorMethod,
-                options.TotpSecret,
-                options.InteractiveTwoFactor && terminalUi != null
-                    ? methods => Task.FromResult(terminalUi.PromptForTwoFactor(methods))
-                    : null,
-                message => Report(terminalUi, "AUTH", message),
-                cancellationToken);
+            if (string.IsNullOrEmpty(options.Password))
+            {
+                IVrchatSessionStore store = sessionStoreFactory?.Invoke() ?? new VrchatSessionStore();
+                IReadOnlyList<SavedVrchatSession> matches = VrchatSessionStore.Match(store.List(), options.Username);
+                if (matches.Count == 0)
+                {
+                    throw new VrchatApiException(
+                        "No saved session matches --login. Provide --password/VRCLI_PASSWORD or sign in once through the TUI.");
+                }
+                if (matches.Count > 1)
+                {
+                    throw new VrchatApiException(
+                        "More than one saved session matches --login. Use the exact VRChat user ID shown by 'vrcli auth list'.");
+                }
+
+                SavedVrchatSession saved = matches[0];
+                await ReportAsync(terminalUi, "AUTH", "Validating the saved session for " + saved.DisplayName + ".", true);
+                try
+                {
+                    user = await api.ResumeSessionAsync(saved.Tokens, cancellationToken);
+                    store.Save(saved with
+                    {
+                        DisplayName = user.DisplayName,
+                        Tokens = api.ExportSession(),
+                        LastUsed = DateTimeOffset.UtcNow
+                    });
+                }
+                catch (VrchatApiException)
+                {
+                    store.Delete(saved.UserId);
+                    throw new VrchatApiException(
+                        "The saved session for " + saved.DisplayName + " expired and was removed. Sign in again with --password or the TUI.");
+                }
+            }
+            else
+            {
+                await ReportAsync(terminalUi, "AUTH", "Validating account credentials with VRChat.", true);
+                user = await VrchatAuthentication.SignInAsync(
+                    api,
+                    options.Username,
+                    options.Password,
+                    options.TwoFactorCode,
+                    options.TwoFactorMethod,
+                    options.TotpSecret,
+                    options.InteractiveTwoFactor && terminalUi != null
+                        ? methods => Task.FromResult(terminalUi.PromptForTwoFactor(methods))
+                        : null,
+                    message => Report(terminalUi, "AUTH", message),
+                    cancellationToken);
+            }
         }
         return (user, api.ExportSession());
+    }
+
+    private static string? ValidateContentOptions(DeployOptions options, ProjectContentType contentType)
+    {
+        if (options.Operation == OperationMode.Meta) return null;
+
+        if (contentType == ProjectContentType.World)
+        {
+            if (!string.IsNullOrWhiteSpace(options.TargetPath))
+                return "--target is only valid for Avatar projects.";
+            if (!string.IsNullOrWhiteSpace(options.BlueprintId) &&
+                !options.BlueprintId.StartsWith("wrld_", StringComparison.Ordinal))
+            {
+                return "A World project requires a Blueprint ID beginning with 'wrld_'.";
+            }
+            return null;
+        }
+
+        if (options.IsNew)
+            return "--new is only used for World projects. An Avatar is new when its scene PipelineManager has no Blueprint ID.";
+        if (!string.IsNullOrWhiteSpace(options.BlueprintId) &&
+            !options.BlueprintId.StartsWith("avtr_", StringComparison.Ordinal))
+        {
+            return "An Avatar project requires a Blueprint ID beginning with 'avtr_'.";
+        }
+        if (options.HasCapacity || options.HasRecommendedCapacity)
+            return "--capacity and --recommended-capacity are only valid for World projects.";
+        return null;
     }
 
     private async Task<int> ResolveVpmAsync(
@@ -400,7 +578,11 @@ public sealed class DeploymentApplication(
         DeployOptions options,
         string? scenePath,
         string resultFile,
-        VrchatSessionTokens sessionTokens)
+        VrchatSessionTokens sessionTokens,
+        ProjectContentType contentType,
+        string? targetRequestFile,
+        string? targetResponseFile,
+        string recoveryDirectory)
     {
         ProcessStartInfo startInfo = new(unityPath) { WorkingDirectory = options.ProjectPath };
         Add(startInfo, "-batchmode");
@@ -412,20 +594,26 @@ public sealed class DeploymentApplication(
 
         startInfo.Environment[DeploymentEnvironment.BlueprintId] = options.BlueprintId;
         startInfo.Environment[DeploymentEnvironment.Operation] = options.Operation.ToString();
+        startInfo.Environment[DeploymentEnvironment.ContentType] = contentType.ToString();
         startInfo.Environment[DeploymentEnvironment.IsNew] = options.IsNew ? "true" : "false";
-        startInfo.Environment[DeploymentEnvironment.Username] = options.Username;
-        startInfo.Environment[DeploymentEnvironment.Password] = options.Password;
-        if (!string.IsNullOrWhiteSpace(options.TwoFactorCode))
-            startInfo.Environment[DeploymentEnvironment.TwoFactorCode] = options.TwoFactorCode;
-        if (!string.IsNullOrWhiteSpace(options.TwoFactorMethod))
-            startInfo.Environment[DeploymentEnvironment.TwoFactorMethod] = options.TwoFactorMethod;
-        if (!string.IsNullOrWhiteSpace(options.TotpSecret))
-            startInfo.Environment[DeploymentEnvironment.TotpSecret] = options.TotpSecret;
         startInfo.Environment[DeploymentEnvironment.AuthToken] = sessionTokens.AuthToken;
         if (!string.IsNullOrWhiteSpace(sessionTokens.TwoFactorToken))
             startInfo.Environment[DeploymentEnvironment.TwoFactorToken] = sessionTokens.TwoFactorToken;
         startInfo.Environment[DeploymentEnvironment.Platform] = options.Platform.ToString();
         startInfo.Environment[DeploymentEnvironment.ResultFile] = resultFile;
+        startInfo.Environment[DeploymentEnvironment.RecoveryDirectory] = recoveryDirectory;
+        if (options.Recovery != null)
+        {
+            startInfo.Environment[DeploymentEnvironment.ResumeBundle] = options.Recovery.BundlePath;
+            if (!string.IsNullOrWhiteSpace(options.Recovery.Signature))
+                startInfo.Environment[DeploymentEnvironment.ResumeSignature] = options.Recovery.Signature;
+        }
+        if (!string.IsNullOrWhiteSpace(options.TargetPath))
+            startInfo.Environment[DeploymentEnvironment.Target] = options.TargetPath;
+        if (!string.IsNullOrWhiteSpace(targetRequestFile))
+            startInfo.Environment[DeploymentEnvironment.TargetRequestFile] = targetRequestFile;
+        if (!string.IsNullOrWhiteSpace(targetResponseFile))
+            startInfo.Environment[DeploymentEnvironment.TargetResponseFile] = targetResponseFile;
         startInfo.Environment[DeploymentEnvironment.OwnershipAccepted] = options.OwnershipAccepted ? "true" : "false";
         if (scenePath != null) startInfo.Environment[DeploymentEnvironment.Scene] = scenePath;
         if (options.Title != null) startInfo.Environment[DeploymentEnvironment.Title] = options.Title;
@@ -476,7 +664,8 @@ public sealed class DeploymentApplication(
         int exitCode,
         string stage,
         string message,
-        DeployOptions? options = null)
+        DeployOptions? options = null,
+        ProjectContentType? contentType = null)
     {
         DeploymentResult result = new(
             false,
@@ -485,13 +674,16 @@ public sealed class DeploymentApplication(
             false,
             options?.Operation == OperationMode.Meta ? null : options?.Platform.ToString(),
             stage,
-            message);
+            message,
+            ContentType: contentType?.ToString());
         await WriteResultAsync(result);
         return exitCode;
     }
 
     private async Task WriteResultAsync(DeploymentResult result)
     {
+        if (string.IsNullOrWhiteSpace(result.VrcliVersion))
+            result = result with { VrcliVersion = Branding.Version };
         LastResult = result;
         await output.WriteLineAsync(JsonSerializer.Serialize(result, ResultJsonOptions));
     }
@@ -508,25 +700,29 @@ public sealed class DeploymentApplication(
 
 VRCLI commands and parameters
 
-  deploy                        Build and upload a world; default command when omitted
-  meta                          Update only an existing world's metadata
-  check                         Check Unity compilation and VRChat SDK upload readiness
+  deploy                        Build and upload project content; auto-detects World or Avatar
+  meta                          Update existing world or avatar metadata without Unity
+  check                         Check Unity compilation and SDK readiness; auto-detects content type
+  auth list                     List saved VRChat sessions without exposing tokens
+  auth logout <account>         Remove one saved session; use --all to remove every session
 
   --project <directory>         Unity project directory for deploy/check; default current directory
-  --blueprint <wrld_id>         World override for deploy/check; deploy uses the scene ID when omitted; required by meta
+  --blueprint <content_id>      wrld_ or avtr_ override; deploy/check use the scene ID when omitted; meta requires one
   --new                         Create a private world; deploy only
   --scene <Assets/...unity>     Scene to deploy or check; auto-detected when unambiguous
+  --target <hierarchy/path>     Avatar GameObject to deploy/check when a scene contains several avatars
   --platform <platform>         Deploy/check target: StandaloneWindows64 or Android; default StandaloneWindows64
   --login <username-or-email>   VRChat account; default VRCLI_USERNAME
   --password <password>         Account password; default VRCLI_PASSWORD; visible in shell history
-  --title <name>                World name; metadata option; required with --new
-  --description <text>          World description; metadata option
-  --thumbnail <image>           World image; metadata option; required with --new
+  --title <name>                Content name; required for a new world or avatar
+  --description <text>          Content description; metadata option
+  --thumbnail <image>           Content image; required for a new world or avatar
   --capacity <1+>               Maximum player capacity; metadata option; new-world default 32
   --recommended-capacity <1+>   Recommended player capacity; metadata option; new-world default 16
   --tag <tag>                   Repeatable metadata tag to add
   --remove-tag <tag>            Repeatable metadata tag to remove; meta only
-  --blueprint-output <file>     Save a newly generated wrld_ ID; deploy only
+  --blueprint-output <file>     Save the uploaded wrld_ or avtr_ ID; deploy only
+  --resume <recovery.json>      Retry a preserved upload without rebuilding; deploy only
   --two-factor-code <code>      Current VRChat two-factor code
   --two-factor-method <method>  Code type: totp, emailOtp, or otp
   --interactive-two-factor      Prompt only when VRChat requests two-factor authentication
@@ -556,4 +752,21 @@ public sealed record DeploymentResult(
     IReadOnlyList<string>? Information = null,
     IReadOnlyList<string>? CompilerErrors = null,
     IReadOnlyList<string>? CompilerWarnings = null,
-    IReadOnlyList<MetadataChange>? Changes = null);
+    IReadOnlyList<MetadataChange>? Changes = null,
+    string? ContentType = null,
+    IReadOnlyList<ContentTarget>? Targets = null,
+    string? VrcliVersion = null,
+    string? UnityVersion = null,
+    string? SdkVersion = null,
+    long? DurationMs = null,
+    IReadOnlyList<PhaseTiming>? PhaseTimings = null,
+    BuildArtifact? Artifact = null,
+    int? PreviousVersion = null,
+    int? ServerVersion = null,
+    string? ServerUpdatedAt = null,
+    bool? Verified = null,
+    string? VerificationMessage = null);
+
+public sealed record ContentTarget(string Name, string Selector, string? Blueprint);
+public sealed record PhaseTiming(string Phase, long DurationMs);
+public sealed record BuildArtifact(string Path, long Size, string Sha256, string? RecoveryFile = null);

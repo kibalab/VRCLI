@@ -5,7 +5,6 @@ using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEngine;
 using VRC.Core;
 using VRC.Editor;
@@ -23,12 +22,12 @@ namespace KibaLab.WorldDeployment.Editor
         private static int lastUploadBucket = -1;
         private static bool uploadIncludesThumbnail;
 
-        public static async Task<string> DeployAsync(DeploymentRequest request, string scenePath)
+        public static async Task<DeploymentOutcome> DeployAsync(DeploymentRequest request, string scenePath)
         {
             DeploymentLog.Phase("PREPARE", "Preparing project and scene for the VRChat SDK builder.");
-            ValidateActivePlatform(request.Platform);
+            ContentScene.ValidatePlatform(request.Platform);
             EnsureVrchatProjectSettings();
-            OpenScene(scenePath);
+            ContentScene.Open(scenePath);
 
             VRC_SceneDescriptor descriptor = Object.FindObjectOfType<VRC_SceneDescriptor>();
             if (descriptor == null) throw new InvalidOperationException("VRC_SceneDescriptor was not found in the selected scene.");
@@ -37,6 +36,7 @@ namespace KibaLab.WorldDeployment.Editor
             if (pipeline == null) pipeline = Object.FindObjectOfType<PipelineManager>();
             if (pipeline == null) throw new InvalidOperationException("PipelineManager was not found in the selected scene.");
             DeploymentLog.Info("PREPARE", "VRC_SceneDescriptor and PipelineManager were found.");
+            DeploymentLog.Phase("TARGET", "Selected the world descriptor from the requested scene.");
 
             if (!request.IsNew)
             {
@@ -97,35 +97,50 @@ namespace KibaLab.WorldDeployment.Editor
                     (string.IsNullOrWhiteSpace(world.GetLatestAssetUrlForPlatform(VRC.Tools.Platform)) ? "not present; a platform bundle will be added" : "present; a new file version will be uploaded"));
             }
 
-            DeploymentLog.Phase("SDK", "Initializing the VRChat world builder.");
-            IVRCSdkWorldBuilderApi builder = await GetBuilderAsync();
-            DeploymentLog.Info("SDK", "VRChat world builder is ready.");
             pipeline.blueprintId = request.BlueprintId;
             if (request.IsNew)
             {
-                SynchronizeBuilderBlueprint(builder, request.BlueprintId);
                 await OwnershipAgreement.AcceptForNewContentAsync(request.BlueprintId, request.OwnershipAccepted);
             }
             else
             {
                 await OwnershipAgreement.EnsureAsync(request.BlueprintId, request.OwnershipAccepted);
             }
-            EventHandler<string> buildProgress = OnBuildProgress;
-            EventHandler<string> buildSuccess = (sender, path) =>
-                DeploymentLog.Info("BUILD", "SDK produced build artifact: " + path);
-            builder.OnSdkBuildProgress += buildProgress;
-            builder.OnSdkBuildSuccess += buildSuccess;
             (string path, string signature) build;
-            try
+            if (request.IsResume)
             {
-                DeploymentLog.Phase("BUILD", "Starting SDK validation and world asset-bundle build for " + request.Platform + ".");
-                DeploymentLog.Info("SIGNATURE", "The SDK will generate a fresh signature for this bundle.");
-                build = await builder.BuildWithSignature();
+                DeploymentLog.Phase("BUILD", "Reusing the preserved world bundle; SDK validation and build are skipped for this recovery attempt.");
+                build = (request.ResumeBundlePath, request.ResumeSignature);
             }
-            finally
+            else
             {
-                builder.OnSdkBuildProgress -= buildProgress;
-                builder.OnSdkBuildSuccess -= buildSuccess;
+                DeploymentLog.Phase("SDK", "Initializing the VRChat world builder.");
+                IVRCSdkWorldBuilderApi builder = await GetBuilderAsync();
+                string invalidReason;
+                if (!builder.IsValidBuilder(out invalidReason))
+                {
+                    throw new BuilderException(string.IsNullOrWhiteSpace(invalidReason)
+                        ? "The VRChat SDK world builder rejected the selected scene."
+                        : invalidReason.Replace('\n', ' '));
+                }
+                DeploymentLog.Info("SDK", "VRChat world builder is ready.");
+                if (request.IsNew) SynchronizeBuilderBlueprint(builder, request.BlueprintId);
+                EventHandler<string> buildProgress = OnBuildProgress;
+                EventHandler<string> buildSuccess = (sender, path) =>
+                    DeploymentLog.Info("BUILD", "SDK produced build artifact: " + path);
+                builder.OnSdkBuildProgress += buildProgress;
+                builder.OnSdkBuildSuccess += buildSuccess;
+                try
+                {
+                    DeploymentLog.Phase("BUILD", "Starting SDK validation and world asset-bundle build for " + request.Platform + ".");
+                    DeploymentLog.Info("SIGNATURE", "The SDK will generate a fresh signature for this bundle.");
+                    build = await builder.BuildWithSignature();
+                }
+                finally
+                {
+                    builder.OnSdkBuildProgress -= buildProgress;
+                    builder.OnSdkBuildSuccess -= buildSuccess;
+                }
             }
 
             if (string.IsNullOrWhiteSpace(build.path) || !File.Exists(build.path) ||
@@ -153,6 +168,10 @@ namespace KibaLab.WorldDeployment.Editor
             DeploymentLog.Info("SIGNATURE", request.IsNew
                 ? "The generated signature will be stored with the new world record."
                 : "The world record will be updated with the generated signature after bundle upload.");
+            int previousVersion = request.IsNew ? 0 : world.Version;
+            BuildArtifact artifact = BuildArtifact.Capture(build.path);
+            DeploymentLog.Info("BUILD", "Bundle SHA-256: " + artifact.Sha256);
+            RecoveryStore.Preserve(request, artifact, build.signature, request.IsNew);
             VRCWorld uploaded;
             if (request.IsNew)
             {
@@ -202,7 +221,16 @@ namespace KibaLab.WorldDeployment.Editor
             DeploymentLog.Info("SIGNATURE", "VRChat confirmed the world-signature update.");
             DeploymentLog.Info("UPLOAD", "Server world version: " + uploaded.Version);
             DeploymentLog.Info("UPLOAD", "Server updated time: " + uploaded.UpdatedAt.ToUniversalTime().ToString("O"));
-            return uploaded.ID;
+            return new DeploymentOutcome
+            {
+                Blueprint = uploaded.ID,
+                Created = request.IsNew,
+                Message = request.IsNew ? "World created, built, and uploaded." : "World build and upload completed.",
+                PreviousVersion = previousVersion,
+                ServerVersion = uploaded.Version,
+                ServerUpdatedAt = uploaded.UpdatedAt.ToUniversalTime().ToString("O"),
+                Artifact = artifact
+            };
         }
 
         private static void SynchronizeBuilderBlueprint(IVRCSdkWorldBuilderApi builder, string blueprintId)
@@ -220,64 +248,6 @@ namespace KibaLab.WorldDeployment.Editor
                 }
             }
             if (lastBlueprint != null) lastBlueprint.SetValue(builder, blueprintId);
-        }
-
-        internal static string ResolveScenePath(string scenePath)
-        {
-            string selected = scenePath;
-            if (string.IsNullOrWhiteSpace(selected))
-            {
-                foreach (EditorBuildSettingsScene scene in EditorBuildSettings.scenes)
-                {
-                    if (!scene.enabled) continue;
-                    selected = scene.path;
-                    break;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(selected))
-            {
-                throw new ArgumentException("No scene was specified and EditorBuildSettings has no enabled scene.");
-            }
-
-            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
-            string fullPath = Path.IsPathRooted(selected)
-                ? selected
-                : Path.Combine(projectRoot, selected.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(fullPath))
-            {
-                throw new FileNotFoundException("Scene was not found.", selected);
-            }
-            return selected;
-        }
-
-        internal static void OpenScene(string scenePath)
-        {
-            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
-            DeploymentLog.Info("PREPARE", "Opened build scene: " + scenePath);
-        }
-
-        internal static void ValidateActivePlatform(string requestedPlatform)
-        {
-            BuildTarget expected = requestedPlatform == "Android" ? BuildTarget.Android : BuildTarget.StandaloneWindows64;
-            if (EditorUserBuildSettings.activeBuildTarget != expected)
-            {
-                throw new InvalidOperationException(
-                    "Unity active build target is " + EditorUserBuildSettings.activeBuildTarget +
-                    ", but VRCLI requested " + expected + ".");
-            }
-
-            DeploymentLog.Info("PREPARE", "Active Unity build target matches " + expected + ".");
-
-            if (expected == BuildTarget.Android && EditorUserBuildSettings.androidBuildSubtarget != MobileTextureSubtarget.ASTC)
-            {
-                EditorUserBuildSettings.androidBuildSubtarget = MobileTextureSubtarget.ASTC;
-                DeploymentLog.Info("PREPARE", "Android texture compression target changed to ASTC.");
-            }
-            else if (expected == BuildTarget.Android)
-            {
-                DeploymentLog.Info("PREPARE", "Android texture compression target is ASTC.");
-            }
         }
 
         private static void EnsureVrchatProjectSettings()

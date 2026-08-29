@@ -31,9 +31,29 @@ public sealed record WorldMetadataSnapshot(
     string? ImageUrl,
     int Version);
 
+public sealed record AvatarMetadataSnapshot(
+    string Id,
+    string AuthorId,
+    string Title,
+    string Description,
+    IReadOnlyList<string> Tags,
+    string? ImageUrl,
+    int Version);
+
 public sealed record MetadataChange(string Field, string Before, string After);
 
-public class VrchatApiException(string message) : Exception(message);
+public sealed record RemotePlatformPackage(string Platform, string? AssetUrl, int? AssetVersion);
+
+public sealed record RemoteContentSnapshot(
+    string Id,
+    string AuthorId,
+    int Version,
+    IReadOnlyList<RemotePlatformPackage> Packages);
+
+public class VrchatApiException(string message, int? statusCode = null) : Exception(message)
+{
+    public int? StatusCode { get; } = statusCode;
+}
 
 public sealed class VrchatCredentialException(string message) : Exception(message);
 
@@ -48,11 +68,15 @@ public sealed class VrchatApiClient : IDisposable
     private readonly HttpClient client;
     private readonly bool ownsClient;
     private readonly CookieContainer? cookies;
+    private readonly Func<TimeSpan, CancellationToken, Task> delayAsync;
 
     public VrchatUser? CurrentUser { get; private set; }
 
-    public VrchatApiClient(HttpMessageHandler? messageHandler = null)
+    public VrchatApiClient(
+        HttpMessageHandler? messageHandler = null,
+        Func<TimeSpan, CancellationToken, Task>? delayAsync = null)
     {
+        this.delayAsync = delayAsync ?? Task.Delay;
         if (messageHandler == null)
         {
             cookies = new CookieContainer();
@@ -180,6 +204,51 @@ public sealed class VrchatApiClient : IDisposable
         return DeserializeWorld(body);
     }
 
+    public async Task<RemoteContentSnapshot> GetContentAsync(
+        string blueprint,
+        Action<string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        string endpoint = blueprint.StartsWith("wrld_", StringComparison.Ordinal)
+            ? "worlds/" + blueprint
+            : blueprint.StartsWith("avtr_", StringComparison.Ordinal)
+                ? "avatars/" + blueprint
+                : throw new ArgumentException("Blueprint must begin with wrld_ or avtr_.", nameof(blueprint));
+
+        string body = await GetWithRetryAsync(endpoint, progress, cancellationToken);
+        using JsonDocument document = ParseJson(body, "content verification");
+        JsonElement root = document.RootElement;
+        string? id = ReadString(root, "id");
+        string? authorId = ReadString(root, "authorId");
+        if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(authorId))
+            throw new VrchatApiException("VRChat returned an incomplete content record.");
+
+        int version = root.TryGetProperty("version", out JsonElement versionElement) &&
+                      versionElement.TryGetInt32(out int parsedVersion)
+            ? parsedVersion
+            : 0;
+        List<RemotePlatformPackage> packages = [];
+        if (root.TryGetProperty("unityPackages", out JsonElement packageArray) &&
+            packageArray.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement package in packageArray.EnumerateArray())
+            {
+                string? platform = ReadString(package, "platform");
+                if (string.IsNullOrWhiteSpace(platform)) continue;
+                int? assetVersion = package.TryGetProperty("assetVersion", out JsonElement assetVersionElement) &&
+                                    assetVersionElement.TryGetInt32(out int parsedAssetVersion)
+                    ? parsedAssetVersion
+                    : null;
+                packages.Add(new RemotePlatformPackage(
+                    platform,
+                    ReadString(package, "assetUrl"),
+                    assetVersion));
+            }
+        }
+
+        return new RemoteContentSnapshot(id, authorId, version, packages);
+    }
+
     public async Task<WorldMetadataSnapshot> UpdateWorldAsync(
         WorldMetadataSnapshot current,
         WorldMetadataSnapshot desired,
@@ -207,7 +276,12 @@ public sealed class VrchatApiClient : IDisposable
         if (!string.IsNullOrWhiteSpace(thumbnailPath))
         {
             progress?.Invoke("Preparing and uploading the new world image");
-            string imageUrl = await UploadImageAsync(updated, thumbnailPath, progress, cancellationToken);
+            string imageUrl = await UploadImageAsync(
+                updated.ImageUrl,
+                "World - " + updated.Title,
+                thumbnailPath,
+                progress,
+                cancellationToken);
             string body = await SendJsonAsync(
                 HttpMethod.Put,
                 "worlds/" + current.Id,
@@ -219,12 +293,70 @@ public sealed class VrchatApiClient : IDisposable
         return updated;
     }
 
+    public async Task<AvatarMetadataSnapshot> GetAvatarAsync(
+        string avatarId,
+        CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await client.GetAsync("avatars/" + avatarId, cancellationToken);
+        string body = await ReadSuccessfulBodyAsync(response, cancellationToken);
+        return DeserializeAvatar(body);
+    }
+
+    public async Task<AvatarMetadataSnapshot> UpdateAvatarAsync(
+        AvatarMetadataSnapshot current,
+        AvatarMetadataSnapshot desired,
+        string? thumbnailPath,
+        Action<string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureOwner(current);
+        Dictionary<string, object> changes = new();
+        if (!string.Equals(current.Title, desired.Title, StringComparison.Ordinal)) changes["name"] = desired.Title;
+        if (!string.Equals(current.Description, desired.Description, StringComparison.Ordinal)) changes["description"] = desired.Description;
+        if (!current.Tags.SequenceEqual(desired.Tags, StringComparer.Ordinal)) changes["tags"] = desired.Tags;
+
+        AvatarMetadataSnapshot updated = current;
+        if (changes.Count > 0)
+        {
+            progress?.Invoke("Updating avatar fields on the VRChat server");
+            string body = await SendJsonAsync(HttpMethod.Put, "avatars/" + current.Id, changes, cancellationToken);
+            updated = DeserializeAvatar(body);
+        }
+
+        if (!string.IsNullOrWhiteSpace(thumbnailPath))
+        {
+            progress?.Invoke("Preparing and uploading the new avatar image");
+            string imageUrl = await UploadImageAsync(
+                updated.ImageUrl,
+                "Avatar - " + updated.Title,
+                thumbnailPath,
+                progress,
+                cancellationToken);
+            string body = await SendJsonAsync(
+                HttpMethod.Put,
+                "avatars/" + current.Id,
+                new Dictionary<string, string> { ["imageUrl"] = imageUrl },
+                cancellationToken);
+            updated = DeserializeAvatar(body);
+        }
+
+        return updated;
+    }
+
     public void EnsureOwner(WorldMetadataSnapshot world)
     {
         if (CurrentUser == null) throw new VrchatApiException("Authenticate before accessing world metadata.");
         if (!string.Equals(world.AuthorId, CurrentUser.Id, StringComparison.Ordinal))
             throw new VrchatApiException(
                 $"World {world.Id} belongs to another account. Signed in as {CurrentUser.DisplayName} ({CurrentUser.Id}).");
+    }
+
+    public void EnsureOwner(AvatarMetadataSnapshot avatar)
+    {
+        if (CurrentUser == null) throw new VrchatApiException("Authenticate before accessing avatar metadata.");
+        if (!string.Equals(avatar.AuthorId, CurrentUser.Id, StringComparison.Ordinal))
+            throw new VrchatApiException(
+                $"Avatar {avatar.Id} belongs to another account. Signed in as {CurrentUser.DisplayName} ({CurrentUser.Id}).");
     }
 
     public static IReadOnlyList<MetadataChange> Compare(
@@ -243,13 +375,28 @@ public sealed class VrchatApiClient : IDisposable
         return changes;
     }
 
+    public static IReadOnlyList<MetadataChange> Compare(
+        AvatarMetadataSnapshot before,
+        AvatarMetadataSnapshot after,
+        string? thumbnailPath = null)
+    {
+        List<MetadataChange> changes = [];
+        Add(changes, "Title", before.Title, after.Title);
+        Add(changes, "Description", before.Description, after.Description);
+        Add(changes, "Tags", FormatTags(before.Tags), FormatTags(after.Tags));
+        if (!string.IsNullOrWhiteSpace(thumbnailPath))
+            changes.Add(new MetadataChange("Thumbnail", before.ImageUrl ?? "(none)", Path.GetFullPath(thumbnailPath)));
+        return changes;
+    }
+
     public void Dispose()
     {
         if (ownsClient) client.Dispose();
     }
 
     private async Task<string> UploadImageAsync(
-        WorldMetadataSnapshot world,
+        string? currentImageUrl,
+        string displayName,
         string path,
         Action<string>? progress,
         CancellationToken cancellationToken)
@@ -259,15 +406,15 @@ public sealed class VrchatApiClient : IDisposable
         {
             ".png" => "image/png",
             ".jpg" or ".jpeg" => "image/jpg",
-            _ => throw new VrchatApiException("World thumbnails must be PNG or JPEG files.")
+            _ => throw new VrchatApiException("Thumbnails must be PNG or JPEG files.")
         };
-        string? fileId = ParseFileId(world.ImageUrl);
+        string? fileId = ParseFileId(currentImageUrl);
         RemoteFile file;
         if (fileId == null)
         {
             file = await SendJsonAsync<RemoteFile>(HttpMethod.Post, "file", new
             {
-                name = "World - " + world.Title + " - Image - VRCLI",
+                name = displayName + " - Image - VRCLI",
                 mimeType,
                 extension
             }, cancellationToken);
@@ -316,11 +463,11 @@ public sealed class VrchatApiClient : IDisposable
                 string.Equals(latest.Signature?.Status, "complete", StringComparison.OrdinalIgnoreCase))
                 return completedFile.Url ?? throw new VrchatApiException("The uploaded image has no file URL.");
             if (string.Equals(latest.Status, "error", StringComparison.OrdinalIgnoreCase))
-                throw new VrchatApiException("VRChat reported an error while processing the world image.");
+                throw new VrchatApiException("VRChat reported an error while processing the content image.");
             await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
         }
 
-        throw new VrchatApiException("Timed out while VRChat was processing the world image.");
+        throw new VrchatApiException("Timed out while VRChat was processing the content image.");
     }
 
     private async Task UploadDescriptorAsync(
@@ -412,6 +559,34 @@ public sealed class VrchatApiClient : IDisposable
                ?? throw new VrchatApiException("VRChat returned an empty response.");
     }
 
+    private async Task<string> GetWithRetryAsync(
+        string endpoint,
+        Action<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        const int attempts = 4;
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using HttpResponseMessage response = await client.GetAsync(endpoint, cancellationToken);
+                string body = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (response.IsSuccessStatusCode) return body;
+
+                int statusCode = (int)response.StatusCode;
+                if (!IsTransient(statusCode) || attempt == attempts)
+                    throw new VrchatApiException(ReadError(body, statusCode), statusCode);
+            }
+            catch (HttpRequestException) when (attempt < attempts)
+            {
+            }
+
+            TimeSpan delay = TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
+            progress?.Invoke($"VRChat verification request was transiently unavailable; retrying in {delay.TotalSeconds:0} seconds ({attempt}/{attempts - 1}).");
+            await delayAsync(delay, cancellationToken);
+        }
+    }
+
     private async Task<T> SendJsonAsync<T>(
         HttpMethod method,
         string endpoint,
@@ -462,9 +637,17 @@ public sealed class VrchatApiClient : IDisposable
     {
         string body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new VrchatApiException(ReadError(body, (int)response.StatusCode));
+            throw new VrchatApiException(ReadError(body, (int)response.StatusCode), (int)response.StatusCode);
         return body;
     }
+
+    private static bool IsTransient(int statusCode) =>
+        statusCode == 429 || statusCode is 500 or 502 or 503 or 504;
+
+    private static string? ReadString(JsonElement element, string name) =>
+        element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     private static WorldMetadataSnapshot DeserializeWorld(string json)
     {
@@ -482,6 +665,22 @@ public sealed class VrchatApiClient : IDisposable
             world.Tags ?? [],
             world.ImageUrl,
             world.Version);
+    }
+
+    private static AvatarMetadataSnapshot DeserializeAvatar(string json)
+    {
+        AvatarResponse avatar = JsonSerializer.Deserialize<AvatarResponse>(json, JsonOptions)
+                                ?? throw new VrchatApiException("VRChat returned an empty avatar record.");
+        if (string.IsNullOrWhiteSpace(avatar.Id) || string.IsNullOrWhiteSpace(avatar.AuthorId))
+            throw new VrchatApiException("VRChat returned an incomplete avatar record.");
+        return new AvatarMetadataSnapshot(
+            avatar.Id,
+            avatar.AuthorId,
+            avatar.Name ?? string.Empty,
+            avatar.Description ?? string.Empty,
+            avatar.Tags ?? [],
+            avatar.ImageUrl,
+            avatar.Version);
     }
 
     private static VrchatUser? ReadUser(JsonElement root)
@@ -570,6 +769,15 @@ public sealed class VrchatApiClient : IDisposable
         string? Description,
         int Capacity,
         int RecommendedCapacity,
+        IReadOnlyList<string>? Tags,
+        string? ImageUrl,
+        int Version);
+
+    private sealed record AvatarResponse(
+        string Id,
+        string AuthorId,
+        string? Name,
+        string? Description,
         IReadOnlyList<string>? Tags,
         string? ImageUrl,
         int Version);
