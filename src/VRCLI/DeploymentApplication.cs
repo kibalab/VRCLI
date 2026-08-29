@@ -148,6 +148,20 @@ public sealed class DeploymentApplication(
             return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", message, options);
         }
 
+        ProjectOperationLock operationLock;
+        try
+        {
+            operationLock = ProjectOperationLock.Acquire(options.ProjectPath, options.Operation);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            await error.WriteLineAsync("VRCLI: " + exception.Message);
+            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project-lock", exception.Message, options, project.ContentType);
+        }
+        using ProjectOperationLock heldProjectLock = operationLock;
+        await ReportAsync(terminalUi, "BOOT", "Exclusive project operation lock acquired.");
+
         terminalUi?.SetOverview(
             Path.GetFileName(options.ProjectPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
             project.ContentType == ProjectContentType.Avatar
