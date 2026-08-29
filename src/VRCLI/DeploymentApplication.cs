@@ -314,6 +314,46 @@ public sealed class DeploymentApplication(
             }
             if (bridgeResult != null)
             {
+                if (bridgeResult.Success && options.Operation == OperationMode.Deploy)
+                {
+                    await ReportAsync(terminalUi, "VERIFY", "Verifying the uploaded platform package with the VRChat server.", true);
+                    try
+                    {
+                        using VrchatApiClient verificationApi = new();
+                        await verificationApi.ResumeSessionAsync(sessionTokens, cancellationToken);
+                        DeploymentVerification verification = await new DeploymentVerifier().VerifyAsync(
+                            verificationApi,
+                            bridgeResult,
+                            authenticatedUser.Id,
+                            options.Platform,
+                            message => Report(terminalUi, "VERIFY", message),
+                            cancellationToken);
+                        bridgeResult = bridgeResult with
+                        {
+                            Success = verification.Success,
+                            ExitCode = verification.Success ? ExitCodes.Success : ExitCodes.UploadFailed,
+                            Stage = verification.Success ? "complete" : "verification",
+                            Message = verification.Success ? bridgeResult.Message : verification.Message,
+                            Verified = verification.Success,
+                            VerificationMessage = verification.Message,
+                            ServerVersion = verification.Content?.Version ?? bridgeResult.ServerVersion
+                        };
+                        await ReportAsync(terminalUi, "VERIFY", verification.Message);
+                    }
+                    catch (Exception exception) when (exception is VrchatApiException or HttpRequestException or TaskCanceledException)
+                    {
+                        bridgeResult = bridgeResult with
+                        {
+                            Success = false,
+                            ExitCode = ExitCodes.NetworkFailed,
+                            Stage = "verification",
+                            Message = "Upload completed, but server verification failed: " + exception.Message,
+                            Verified = false,
+                            VerificationMessage = exception.Message
+                        };
+                    }
+                }
+
                 bool blueprintOutputWritten = false;
                 if (bridgeResult.Success && options.BlueprintOutputPath != null && !string.IsNullOrWhiteSpace(bridgeResult.Blueprint))
                 {
