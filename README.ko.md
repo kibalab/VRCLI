@@ -26,7 +26,7 @@ VRCLI는 터미널이나 CI 러너에서 VRChat 월드와 아바타를 빌드하
 - VRCLI 빌드에 필요한 .NET 8 SDK
 - 월드 또는 아바타를 업로드할 수 있는 VRChat 계정
 
-Windows는 테스트를 완료했습니다. macOS 지원은 실험 단계입니다. Apple Silicon과 Intel Mac용 CLI 빌드는 가능하지만 Mac에서 실제 배포 전체 과정은 아직 검증하지 않았습니다. 자동 Unity 탐색은 현재 Windows만 지원하므로 `UNITY_EDITOR_PATH` 또는 `--unity`를 사용해야 합니다.
+Windows는 전체 과정을 검증했습니다. macOS는 Apple Silicon/Intel 빌드와 Unity Hub 자동 탐색을 지원하지만, Mac에서 실제 업로드 전체 과정은 아직 검증하지 않았습니다. Unity가 표준 Hub 경로 밖에 있을 때만 `UNITY_EDITOR_PATH` 또는 `--unity`를 사용하세요.
 
 ## 설치
 
@@ -59,11 +59,11 @@ Windows에서는 `VRCLI.exe`, macOS에서는 `./VRCLI`를 실행합니다.
 `Directory.Build.props`의 `VersionPrefix`를 변경하고 커밋한 뒤, 일치하는 `vX.Y.Z` 태그를 푸시합니다.
 
 ```bash
-git tag -a v0.18.0 -m "VRCLI v0.18.0"
-git push origin v0.18.0
+git tag -a v0.19.0 -m "VRCLI v0.19.0"
+git push origin v0.19.0
 ```
 
-GitHub Actions가 태그 시점의 커밋을 테스트하고, 자체 포함된 Windows 및 macOS 압축 파일과 SHA-256 체크섬을 GitHub Release에 게시합니다. 태그와 `VersionPrefix`가 다르면 릴리스를 만들지 않고 실패합니다.
+GitHub Actions가 Windows, Apple Silicon, Intel 러너에서 태그 커밋을 네이티브 테스트합니다. 릴리스에는 자체 포함 CLI, VPM 패키지, SHA-256 체크섬, SPDX SBOM, GitHub 아티팩트 증명이 포함되며 GitHub Pages VPM 목록도 갱신됩니다. 태그와 두 프로젝트 버전이 다르면 게시 전에 실패합니다.
 
 ## 대화형으로 사용
 
@@ -79,7 +79,9 @@ vrcli check
 - `meta`: Unity를 열지 않고 기존 메타데이터를 수정하며 로그인 세션을 유지합니다.
 - `check`: 프로젝트 유형을 판별하고 빌드나 업로드 없이 컴파일 및 SDK 업로드 문제를 보고합니다.
 
-TUI에서 프로젝트, 씬, 계정과 필요한 인증 코드를 입력할 수 있습니다. Windows에서는 인증된 세션을 Windows 자격 증명 관리자에 저장하며, 다음 실행부터 저장된 계정을 선택하거나 새 계정으로 로그인할 수 있습니다.
+TUI에서 프로젝트, 씬, 계정과 필요한 인증 코드를 입력할 수 있습니다. 인증된 세션은 Windows 자격 증명 관리자 또는 macOS Keychain에 저장되며, 다음 실행부터 저장된 계정을 선택하거나 새 계정으로 로그인할 수 있습니다.
+
+일반 CLI에서도 `--login <저장된-계정>`을 비밀번호 없이 지정하면 저장 세션을 사용합니다. `vrcli auth list`, `vrcli auth logout <계정>`, `vrcli auth logout --all`로 세션을 확인·삭제할 수 있습니다. `--password`를 함께 지정하면 항상 새로 로그인합니다.
 
 ## CI 또는 스크립트에서 사용
 
@@ -105,6 +107,8 @@ vrcli deploy `
 ```
 
 일회용 인증 코드는 `--two-factor-code <현재-코드>`와 함께 `--two-factor-method totp`, `emailOtp` 또는 `otp`를 지정합니다. 명령행 비밀번호는 셸 기록이나 프로세스 목록에 남을 수 있으므로 CI에서는 환경변수가 더 안전합니다.
+
+빌드는 성공했지만 업로드 또는 서버 검증이 실패하면 JSON 결과의 `Artifact.RecoveryFile`에 복구 매니페스트가 기록됩니다. 일반 로그인 옵션과 `--resume <recovery.json>`을 사용하면 빌드 없이 보존된 번들을 다시 업로드합니다. 서버에서 대상 플랫폼 버전을 확인한 뒤에만 복구 파일을 삭제합니다.
 
 ### 기존 월드 배포
 
@@ -186,7 +190,7 @@ jobs:
         platform: [StandaloneWindows64, Android]
     runs-on: [self-hosted, windows, x64, vrchat-unity]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - shell: pwsh
         env:
           VRCLI_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
@@ -214,9 +218,20 @@ jobs:
   "ContentType": "World",
   "Platform": "StandaloneWindows64",
   "Stage": "complete",
-  "Message": "World build and upload completed."
+  "Message": "World build and upload completed.",
+  "Verified": true,
+  "VrcliVersion": "0.19.0",
+  "UnityVersion": "2022.3.22f1",
+  "SdkVersion": "3.10.1",
+  "DurationMs": 120000,
+  "Artifact": {
+    "Size": 12345678,
+    "Sha256": "..."
+  }
 }
 ```
+
+배포 결과에는 단계별 소요 시간과 이전/서버 콘텐츠 버전도 포함되어 CI 로그만으로 빌드·업로드·검증 대상을 확인할 수 있습니다.
 
 아바타 선택이 모호하면 비대화형 실패 결과의 `Targets`에 각 후보의 `Name`, Hierarchy `Selector`, 선택적 `Blueprint`가 포함됩니다. 원하는 `Selector`를 `--target`으로 지정하세요.
 

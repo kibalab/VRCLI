@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.19.0
+
+- Added automatic World/Avatar project detection, multi-avatar target selection, and avatar metadata editing.
+- Added saved-session selection and management for scripts, Windows Credential Manager, and macOS Keychain.
+- Added atomic bridge replacement and one-operation-per-project locking.
+- Added post-upload server verification, phase timings, artifact hashes, version provenance, and resumable upload recovery manifests.
+- Added native Windows, Apple silicon, and Intel macOS CI/release builds.
+- Added VPM listing publication, SPDX SBOMs, SHA-256 checksums, and GitHub artifact attestations.
+- Added clean-project compatibility compilation for Worlds and Avatars SDK 3.9.0 and latest.
+
 ## 0.11.0
 
 - Removed all compatibility CLI aliases; legacy spellings now fail as unknown options.
