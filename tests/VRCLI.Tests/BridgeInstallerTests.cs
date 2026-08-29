@@ -60,6 +60,29 @@ public sealed class BridgeInstallerTests : IDisposable
         Assert.False(File.Exists(Path.Combine(installed, "Obsolete.cs")));
     }
 
+    [Fact]
+    public void RecoversAnInterruptedDirectorySwapBeforeUpdating()
+    {
+        string applicationDirectory = Path.Combine(root, "app-recovery");
+        string source = Path.Combine(applicationDirectory, "UnityBridge");
+        string project = Path.Combine(root, "project-recovery");
+        string installed = Path.Combine(project, "Packages", "com.kibalab.vrcli");
+        string backup = installed + ".backup";
+        string staging = installed + ".installing";
+        Directory.CreateDirectory(source);
+        Directory.CreateDirectory(backup);
+        Directory.CreateDirectory(staging);
+        File.WriteAllText(Path.Combine(source, "package.json"), "{\"version\":\"new\"}");
+        File.WriteAllText(Path.Combine(backup, "package.json"), "{\"version\":\"old\"}");
+        File.WriteAllText(Path.Combine(staging, "partial.cs"), "// interrupted");
+
+        BridgeInstaller.InstallIfMissing(project, applicationDirectory);
+
+        Assert.Equal("{\"version\":\"new\"}", File.ReadAllText(Path.Combine(installed, "package.json")));
+        Assert.False(Directory.Exists(backup));
+        Assert.False(Directory.Exists(staging));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root)) Directory.Delete(root, true);
