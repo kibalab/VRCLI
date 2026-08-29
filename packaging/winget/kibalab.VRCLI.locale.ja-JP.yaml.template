@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.10.0.schema.json
+
+PackageIdentifier: kibalab.VRCLI
+PackageVersion: @VERSION@
+PackageLocale: ja-JP
+Publisher: KIBA_
+PackageName: VRCLI
+ShortDescription: ターミナルまたは CI から VRChat ワールドとアバターをビルド、チェック、アップロードします。
+Description: VRCLI は Unity と VRChat Worlds／Avatars SDK プロジェクトの対話型および無人デプロイを自動化します。
+ManifestType: locale
+ManifestVersion: 1.10.0

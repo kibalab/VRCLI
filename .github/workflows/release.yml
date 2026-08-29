@@ -177,11 +177,26 @@ jobs:
             "artifacts/packages/VRCLI-$VERSION.spdx.json"
           rm -rf artifacts/packages/_manifest
 
+      - name: Generate WinGet submission manifests
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.value }}
+        run: |
+          $installer = "artifacts/packages/VRCLI-$env:VERSION-win-x64-setup.exe"
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+          ./scripts/new-winget-manifest.ps1 `
+            -Version $env:VERSION `
+            -InstallerSha256 $hash `
+            -OutputDirectory artifacts/winget
+          Compress-Archive `
+            -Path artifacts/winget/manifests `
+            -DestinationPath "artifacts/packages/kibalab.VRCLI-$env:VERSION-winget.zip"
+
       - name: Write SHA-256 checksums
         shell: bash
         run: |
           set -euo pipefail
-          (cd artifacts/packages && sha256sum VRCLI-* com.kibalab.vrcli-* > SHA256SUMS.txt)
+          (cd artifacts/packages && sha256sum VRCLI-* com.kibalab.vrcli-* kibalab.VRCLI-* > SHA256SUMS.txt)
 
       - name: Attest release artifacts
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
