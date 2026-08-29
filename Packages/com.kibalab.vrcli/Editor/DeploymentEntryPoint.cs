@@ -145,7 +145,7 @@ namespace KibaLab.WorldDeployment.Editor
             if (exception is UploadException || exception is BundleExistsException) return 50;
             if (exception is ApiErrorException || exception is RequestFailedException) return 70;
             if (exception is TimeoutException) return 124;
-            if (exception is OperationCanceledException) return 124;
+            if (exception is OperationCanceledException) return 130;
             return 125;
         }
 
@@ -159,6 +159,7 @@ namespace KibaLab.WorldDeployment.Editor
                 case 50: return "upload";
                 case 60: return "ownership";
                 case 124: return "timeout";
+                case 130: return "cancelled";
                 default: return "unexpected";
             }
         }

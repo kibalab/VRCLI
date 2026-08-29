@@ -98,7 +98,7 @@ public sealed class DeploymentApplication(
         {
             if (terminalUi != null) await terminalUi.FinishAsync(false);
             await error.WriteLineAsync("VRCLI: Cancelled.");
-            return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Authentication cancelled.", options);
+            return await WriteFailureAsync(ExitCodes.Canceled, "cancelled", "Authentication cancelled.", options);
         }
         catch (Exception exception) when (exception is VrchatApiException or HttpRequestException or TaskCanceledException)
         {
@@ -148,6 +148,20 @@ public sealed class DeploymentApplication(
             return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project", message, options);
         }
 
+        ProjectOperationLock operationLock;
+        try
+        {
+            operationLock = ProjectOperationLock.Acquire(options.ProjectPath, options.Operation);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            if (terminalUi != null) await terminalUi.FinishAsync(false);
+            await error.WriteLineAsync("VRCLI: " + exception.Message);
+            return await WriteFailureAsync(ExitCodes.ProjectInvalid, "project-lock", exception.Message, options, project.ContentType);
+        }
+        using ProjectOperationLock heldProjectLock = operationLock;
+        await ReportAsync(terminalUi, "BOOT", "Exclusive project operation lock acquired.");
+
         terminalUi?.SetOverview(
             Path.GetFileName(options.ProjectPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
             project.ContentType == ProjectContentType.Avatar
@@ -179,7 +193,7 @@ public sealed class DeploymentApplication(
             {
                 if (terminalUi != null) await terminalUi.FinishAsync(false);
                 await error.WriteLineAsync("VRCLI: Cancelled.");
-                return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Operation cancelled.", options);
+                return await WriteFailureAsync(ExitCodes.Canceled, "cancelled", "Operation cancelled.", options);
             }
         }
         else
@@ -346,7 +360,7 @@ public sealed class DeploymentApplication(
         {
             if (terminalUi != null) await terminalUi.FinishAsync(false);
             await error.WriteLineAsync("VRCLI: Cancelled.");
-            return await WriteFailureAsync(ExitCodes.TimedOut, "cancelled", "Operation cancelled.", options);
+            return await WriteFailureAsync(ExitCodes.Canceled, "cancelled", "Operation cancelled.", options);
         }
         catch (Exception exception)
         {
@@ -483,14 +497,6 @@ public sealed class DeploymentApplication(
         startInfo.Environment[DeploymentEnvironment.Operation] = options.Operation.ToString();
         startInfo.Environment[DeploymentEnvironment.ContentType] = contentType.ToString();
         startInfo.Environment[DeploymentEnvironment.IsNew] = options.IsNew ? "true" : "false";
-        startInfo.Environment[DeploymentEnvironment.Username] = options.Username;
-        startInfo.Environment[DeploymentEnvironment.Password] = options.Password;
-        if (!string.IsNullOrWhiteSpace(options.TwoFactorCode))
-            startInfo.Environment[DeploymentEnvironment.TwoFactorCode] = options.TwoFactorCode;
-        if (!string.IsNullOrWhiteSpace(options.TwoFactorMethod))
-            startInfo.Environment[DeploymentEnvironment.TwoFactorMethod] = options.TwoFactorMethod;
-        if (!string.IsNullOrWhiteSpace(options.TotpSecret))
-            startInfo.Environment[DeploymentEnvironment.TotpSecret] = options.TotpSecret;
         startInfo.Environment[DeploymentEnvironment.AuthToken] = sessionTokens.AuthToken;
         if (!string.IsNullOrWhiteSpace(sessionTokens.TwoFactorToken))
             startInfo.Environment[DeploymentEnvironment.TwoFactorToken] = sessionTokens.TwoFactorToken;

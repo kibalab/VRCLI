@@ -56,7 +56,7 @@ internal static class Program
             if (wizard == null)
             {
                 Console.WriteLine("  ◇ " + InteractiveWizard.CancellationMessage(args));
-                return ExitCodes.Success;
+                return ExitCodes.Canceled;
             }
             args = wizard.Arguments;
             InteractiveWizard.ApplySecrets(wizard.TemporarySecrets);
