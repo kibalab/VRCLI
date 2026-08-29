@@ -72,6 +72,11 @@ jobs:
         shell: pwsh
         run: ./tests/packaging/Test-WingetManifest.ps1
 
+      - name: Test macOS shell installation
+        if: startsWith(matrix.runtime, 'osx-')
+        shell: bash
+        run: ./tests/packaging/test-macos-shell-install.sh artifacts/${{ matrix.runtime }}
+
       - name: Upload native executable
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
