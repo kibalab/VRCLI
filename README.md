@@ -37,70 +37,31 @@ Windows is tested end to end. macOS builds and Unity Hub discovery support Apple
 
 ## Install
 
-All binaries are self-contained; installing .NET is not required. Installer assets are published on [GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest).
+Download the latest version from [GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest). .NET is not required.
 
-### Windows x64
-
-PowerShell installer (recommended):
+### Windows
 
 ```powershell
-$installer = Join-Path $env:TEMP "install-vrcli.ps1"
-Invoke-WebRequest https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile $installer
-powershell -NoProfile -ExecutionPolicy Bypass -File $installer
+irm https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile install-vrcli.ps1
+powershell -ExecutionPolicy Bypass -File .\install-vrcli.ps1
 ```
 
-This verifies the release checksum, installs to `%LOCALAPPDATA%\Programs\VRCLI`, and adds `vrcli` to the user `PATH`. Run it again to update.
-
-Alternatively:
-
-- Download and run `VRCLI-x.y.z-win-x64-setup.exe` for a normal per-user Setup experience and uninstaller.
-- Download `VRCLI-x.y.z-win-x64.zip`, extract it, and run `VRCLI.exe` for a portable copy.
-- Once the package is accepted into the WinGet Community Repository, install it with `winget install --id kibalab.VRCLI --exact`. The identifier is exactly `kibalab.VRCLI`.
+- Setup: `VRCLI-x.y.z-win-x64-setup.exe`
+- Portable: `VRCLI-x.y.z-win-x64.zip`
+- WinGet, after catalog publication: `winget install --id kibalab.VRCLI --exact`
 
 ### macOS
 
-Shell installer (recommended):
-
 ```bash
-installer=$(mktemp)
-curl -fL https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh -o "$installer"
-sh "$installer"
-rm "$installer"
+curl -fLO https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh
+sh install-vrcli.sh
 ```
 
-This verifies the release checksum, installs under `~/.local`, and makes `vrcli` available from new terminal sessions. Run it again to update.
+- Installer: `VRCLI-x.y.z-osx-arm64.pkg` or `VRCLI-x.y.z-osx-x64.pkg`
+- Portable: matching `.tar.gz`
+- Homebrew, after tap publication: `brew install kibalab/tap/vrcli`
 
-Alternatively:
-
-- Download `VRCLI-x.y.z-osx-arm64.pkg` for Apple silicon or `VRCLI-x.y.z-osx-x64.pkg` for Intel, then open it or run `sudo installer -pkg <file> -target /`.
-- Download the matching `.tar.gz`, extract it, and run `chmod +x VRCLI && ./VRCLI` for a portable copy.
-- Each release includes `vrcli.rb`, a checksum-pinned Formula for both architectures. After the `kibalab/homebrew-tap` repository is published, it can be installed with `brew install kibalab/tap/vrcli`.
-
-The macOS packages are currently unsigned and not notarized. Review the downloaded asset and its entry in `SHA256SUMS.txt` before allowing it through macOS security controls.
-
-### Build from source
-
-Install the .NET 8 SDK, clone the repository, and publish for your platform.
-
-Windows:
-
-```powershell
-git clone https://github.com/kibalab/VRCLI.git
-cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj -c Release -r win-x64 `
-  --self-contained true -o artifacts/win-x64
-```
-
-macOS Apple silicon (use `osx-x64` for Intel):
-
-```bash
-git clone https://github.com/kibalab/VRCLI.git
-cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj -c Release -r osx-arm64 \
-  --self-contained true -o artifacts/osx-arm64
-
-export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Contents/MacOS/Unity"
-```
+macOS packages are currently unsigned and not notarized.
 
 ## Use it interactively
 

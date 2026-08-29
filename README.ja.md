@@ -37,70 +37,31 @@ Windows はエンドツーエンドで検証済みです。macOS は Apple Silic
 
 ## インストール
 
-すべてのバイナリは self-contained のため、.NET を別途インストールする必要はありません。インストーラーは [GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest) で公開されます。
+[GitHub Releases](https://github.com/kibalab/VRCLI/releases/latest) から最新版をダウンロードできます。.NET は不要です。
 
-### Windows x64
-
-PowerShell インストーラー（推奨）:
+### Windows
 
 ```powershell
-$installer = Join-Path $env:TEMP "install-vrcli.ps1"
-Invoke-WebRequest https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile $installer
-powershell -NoProfile -ExecutionPolicy Bypass -File $installer
+irm https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile install-vrcli.ps1
+powershell -ExecutionPolicy Bypass -File .\install-vrcli.ps1
 ```
 
-リリースのチェックサムを検証し、`%LOCALAPPDATA%\Programs\VRCLI` にインストールして、ユーザーの `PATH` に `vrcli` を追加します。同じコマンドを再実行すると更新できます。
-
-その他の方法:
-
-- `VRCLI-x.y.z-win-x64-setup.exe` をダウンロードして実行すると、一般的なユーザー単位のセットアップとアンインストーラーを利用できます。
-- `VRCLI-x.y.z-win-x64.zip` を展開して `VRCLI.exe` を実行すると、ポータブル版として利用できます。
-- WinGet Community Repository でパッケージが承認された後は、`winget install --id kibalab.VRCLI --exact` でインストールできます。識別子は正確に `kibalab.VRCLI` です。
+- セットアップ: `VRCLI-x.y.z-win-x64-setup.exe`
+- ポータブル: `VRCLI-x.y.z-win-x64.zip`
+- カタログ公開後の WinGet: `winget install --id kibalab.VRCLI --exact`
 
 ### macOS
 
-シェルインストーラー（推奨）:
-
 ```bash
-installer=$(mktemp)
-curl -fL https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh -o "$installer"
-sh "$installer"
-rm "$installer"
+curl -fLO https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh
+sh install-vrcli.sh
 ```
 
-リリースのチェックサムを検証し、`~/.local` 以下にインストールして、新しいターミナルから `vrcli` を実行できるようにします。同じコマンドを再実行すると更新できます。
+- インストーラー: `VRCLI-x.y.z-osx-arm64.pkg` または `VRCLI-x.y.z-osx-x64.pkg`
+- ポータブル: アーキテクチャに合う `.tar.gz`
+- Tap 公開後の Homebrew: `brew install kibalab/tap/vrcli`
 
-その他の方法:
-
-- Apple Silicon は `VRCLI-x.y.z-osx-arm64.pkg`、Intel は `VRCLI-x.y.z-osx-x64.pkg` をダウンロードして開くか、`sudo installer -pkg <ファイル> -target /` でインストールできます。
-- アーキテクチャに合う `.tar.gz` を展開し、`chmod +x VRCLI && ./VRCLI` を実行するとポータブル版として利用できます。
-- 各リリースには、両アーキテクチャのチェックサムを固定した `vrcli.rb` Formula が含まれます。`kibalab/homebrew-tap` リポジトリの公開後は、`brew install kibalab/tap/vrcli` でインストールできます。
-
-現在の macOS パッケージは未署名・未公証です。macOS のセキュリティ設定で許可する前に、ダウンロードしたファイルと `SHA256SUMS.txt` のチェックサムを確認してください。
-
-### ソースからビルド
-
-.NET 8 SDK をインストールし、リポジトリをクローンして対象プラットフォーム向けにビルドします。
-
-Windows:
-
-```powershell
-git clone https://github.com/kibalab/VRCLI.git
-cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj -c Release -r win-x64 `
-  --self-contained true -o artifacts/win-x64
-```
-
-Apple Silicon Mac（Intel は `osx-x64` を使用）:
-
-```bash
-git clone https://github.com/kibalab/VRCLI.git
-cd VRCLI
-dotnet publish src/VRCLI/VRCLI.csproj -c Release -r osx-arm64 \
-  --self-contained true -o artifacts/osx-arm64
-
-export UNITY_EDITOR_PATH="/Applications/Unity/Hub/Editor/<version>/Unity.app/Contents/MacOS/Unity"
-```
+現在の macOS パッケージは未署名・未公証です。
 
 ## 対話型で使う
 
