@@ -12,9 +12,11 @@ runtime=$2
 temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/vrcli-homebrew-test.XXXXXX")
 archive="${temporary_root}/VRCLI-1.2.3-${runtime}.tar.gz"
 formula="${temporary_root}/vrcli.rb"
+tap="kibalab/vrcli-test"
 
 cleanup() {
-  HOMEBREW_NO_AUTO_UPDATE=1 brew uninstall --formula vrcli >/dev/null 2>&1 || true
+  HOMEBREW_NO_AUTO_UPDATE=1 brew uninstall --formula "${tap}/vrcli" >/dev/null 2>&1 || true
+  HOMEBREW_NO_AUTO_UPDATE=1 brew untap "$tap" >/dev/null 2>&1 || true
   rm -rf "$temporary_root"
 }
 trap cleanup EXIT HUP INT TERM
@@ -48,10 +50,15 @@ pwsh -NoLogo -NoProfile -File "${repository}/scripts/new-homebrew-formula.ps1" \
   -X64Url "$archive_url" \
   -OutputPath "$formula" >/dev/null
 
-run_checked env HOMEBREW_NO_AUTO_UPDATE=1 brew install --formula "$formula"
-run_checked env HOMEBREW_NO_AUTO_UPDATE=1 brew test vrcli
+run_checked env HOMEBREW_NO_AUTO_UPDATE=1 brew tap-new "$tap"
+tap_repository=$(brew --repository "$tap")
+mkdir -p "${tap_repository}/Formula"
+cp "$formula" "${tap_repository}/Formula/vrcli.rb"
+
+run_checked env HOMEBREW_NO_AUTO_UPDATE=1 brew install --formula "${tap}/vrcli"
+run_checked env HOMEBREW_NO_AUTO_UPDATE=1 brew test "${tap}/vrcli"
 run_checked "$(brew --prefix)/bin/vrcli" --help
-run_checked env HOMEBREW_NO_AUTO_UPDATE=1 brew uninstall --formula vrcli
+run_checked env HOMEBREW_NO_AUTO_UPDATE=1 brew uninstall --formula "${tap}/vrcli"
 
 if [ -e "$(brew --prefix)/bin/vrcli" ]; then
   echo "Homebrew did not remove the vrcli command." >&2
