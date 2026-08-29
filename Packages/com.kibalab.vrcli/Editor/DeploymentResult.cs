@@ -19,6 +19,15 @@ namespace KibaLab.WorldDeployment.Editor
         public string[] Warnings;
         public string[] Information;
         public ContentTarget[] Targets;
+        public string VrcliVersion;
+        public string UnityVersion;
+        public string SdkVersion;
+        public long DurationMs;
+        public PhaseTiming[] PhaseTimings;
+        public BuildArtifact Artifact;
+        public int PreviousVersion;
+        public int ServerVersion;
+        public string ServerUpdatedAt;
 
         public static void Write(
             string resultFile,
@@ -33,7 +42,8 @@ namespace KibaLab.WorldDeployment.Editor
             string[] errors = null,
             string[] warnings = null,
             string[] information = null,
-            ContentTarget[] targets = null)
+            ContentTarget[] targets = null,
+            DeploymentOutcome outcome = null)
         {
             DeploymentResult result = new DeploymentResult
             {
@@ -48,7 +58,16 @@ namespace KibaLab.WorldDeployment.Editor
                 Errors = errors,
                 Warnings = warnings,
                 Information = information,
-                Targets = targets
+                Targets = targets,
+                VrcliVersion = DeploymentLog.Version,
+                UnityVersion = Application.unityVersion,
+                SdkVersion = VRC.Tools.SdkVersion,
+                DurationMs = DeploymentLog.ElapsedMilliseconds,
+                PhaseTimings = DeploymentLog.SnapshotTimings(),
+                Artifact = outcome != null ? outcome.Artifact : null,
+                PreviousVersion = outcome != null ? outcome.PreviousVersion : 0,
+                ServerVersion = outcome != null ? outcome.ServerVersion : 0,
+                ServerUpdatedAt = outcome != null ? outcome.ServerUpdatedAt : null
             };
 
             string directory = Path.GetDirectoryName(resultFile);

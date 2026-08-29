@@ -21,6 +21,9 @@ namespace KibaLab.WorldDeployment
         public const string Target = "VRCLI_TARGET";
         public const string TargetRequestFile = "VRCLI_TARGET_REQUEST_FILE";
         public const string TargetResponseFile = "VRCLI_TARGET_RESPONSE_FILE";
+        public const string RecoveryDirectory = "VRCLI_RECOVERY_DIRECTORY";
+        public const string ResumeBundle = "VRCLI_RESUME_BUNDLE";
+        public const string ResumeSignature = "VRCLI_RESUME_SIGNATURE";
         public const string Title = "VRCLI_WORLD_NAME";
         public const string Description = "VRCLI_WORLD_DESCRIPTION";
         public const string Thumbnail = "VRCLI_THUMBNAIL";

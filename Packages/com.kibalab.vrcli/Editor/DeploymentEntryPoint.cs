@@ -34,6 +34,7 @@ namespace KibaLab.WorldDeployment.Editor
             try
             {
                 DeploymentLog.Start();
+                RecoveryStore.Start();
                 request = DeploymentRequest.FromEnvironment();
                 DeploymentLog.Phase("BOOT", request.Operation + " request accepted for " + request.Platform + ".");
                 await Authentication.LoginAsync(request);
@@ -69,7 +70,7 @@ namespace KibaLab.WorldDeployment.Editor
                 }
 
                 DeploymentOutcome outcome = await handler.DeployAsync(request, scenePath);
-                DeploymentResult.Write(request.ResultFile, true, 0, outcome.Blueprint, outcome.Created, request.Platform, request.ContentType.ToString(), "complete", outcome.Message);
+                DeploymentResult.Write(request.ResultFile, true, 0, outcome.Blueprint, outcome.Created, request.Platform, request.ContentType.ToString(), "complete", outcome.Message, outcome: outcome);
                 DeploymentLog.Phase("COMPLETE", "Deployment completed successfully for " + outcome.Blueprint + ".");
                 EditorApplication.Exit(0);
             }
@@ -91,7 +92,8 @@ namespace KibaLab.WorldDeployment.Editor
                         targetSelection != null ? "target-selection" :
                         exception is OperationCanceledException ? "cancelled" : StageFor(exitCode),
                         Describe(exception),
-                        targets: targetSelection != null ? targetSelection.Targets : null);
+                        targets: targetSelection != null ? targetSelection.Targets : null,
+                        outcome: RecoveryStore.FailureOutcome());
                 }
                 DeploymentLog.Info("FAILED", "Phase " + DeploymentLog.CurrentPhase + " failed with exit code " + exitCode + ": " + Describe(exception));
                 Debug.LogException(exception);

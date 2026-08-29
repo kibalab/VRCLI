@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 
 namespace KibaLab.WorldDeployment.Editor
@@ -26,6 +27,9 @@ namespace KibaLab.WorldDeployment.Editor
         public string TargetRequestFile { get; private set; }
         public string TargetResponseFile { get; private set; }
         public string ResultFile { get; private set; }
+        public string RecoveryDirectory { get; private set; }
+        public string ResumeBundlePath { get; private set; }
+        public string ResumeSignature { get; private set; }
         public bool OwnershipAccepted { get; private set; }
         public bool UpdateTitle { get; private set; }
         public bool UpdateDescription { get; private set; }
@@ -36,6 +40,7 @@ namespace KibaLab.WorldDeployment.Editor
 
         public bool HasMetadataUpdate => UpdateTitle || UpdateDescription || UpdateCapacity ||
                                          UpdateRecommendedCapacity || UpdateTags;
+        public bool IsResume => !string.IsNullOrWhiteSpace(ResumeBundlePath);
 
         public static DeploymentRequest FromEnvironment()
         {
@@ -49,6 +54,9 @@ namespace KibaLab.WorldDeployment.Editor
                 TwoFactorToken = Environment.GetEnvironmentVariable(DeploymentEnvironment.TwoFactorToken),
                 Platform = Require(DeploymentEnvironment.Platform),
                 ResultFile = Require(DeploymentEnvironment.ResultFile),
+                RecoveryDirectory = Environment.GetEnvironmentVariable(DeploymentEnvironment.RecoveryDirectory),
+                ResumeBundlePath = Environment.GetEnvironmentVariable(DeploymentEnvironment.ResumeBundle),
+                ResumeSignature = Environment.GetEnvironmentVariable(DeploymentEnvironment.ResumeSignature),
                 ScenePath = Environment.GetEnvironmentVariable(DeploymentEnvironment.Scene),
                 TargetPath = Environment.GetEnvironmentVariable(DeploymentEnvironment.Target),
                 TargetRequestFile = Environment.GetEnvironmentVariable(DeploymentEnvironment.TargetRequestFile),
@@ -65,6 +73,12 @@ namespace KibaLab.WorldDeployment.Editor
                 throw new ArgumentException("A generated Blueprint ID is missing for the new world.");
             if (request.Operation != RequestOperation.Deploy && request.IsNew)
                 throw new ArgumentException("VRCLI_CREATE_WORLD is only valid for deployment.");
+            if (request.Operation == RequestOperation.Deploy && string.IsNullOrWhiteSpace(request.RecoveryDirectory))
+                throw new ArgumentException("VRCLI_RECOVERY_DIRECTORY is missing.");
+            if (request.IsResume && !File.Exists(request.ResumeBundlePath))
+                throw new FileNotFoundException("The recovery bundle was not found.", request.ResumeBundlePath);
+            if (request.IsResume && request.ContentType == ContentType.World && string.IsNullOrWhiteSpace(request.ResumeSignature))
+                throw new ArgumentException("VRCLI_RESUME_SIGNATURE is missing for a world recovery.");
 
             if (request.IsNew)
             {

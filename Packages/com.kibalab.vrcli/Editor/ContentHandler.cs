@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -24,6 +25,34 @@ namespace KibaLab.WorldDeployment.Editor
         public string Blueprint { get; set; }
         public bool Created { get; set; }
         public string Message { get; set; }
+        public int PreviousVersion { get; set; }
+        public int ServerVersion { get; set; }
+        public string ServerUpdatedAt { get; set; }
+        public BuildArtifact Artifact { get; set; }
+    }
+
+    [Serializable]
+    internal sealed class BuildArtifact
+    {
+        public string Path;
+        public long Size;
+        public string Sha256;
+        public string RecoveryFile;
+
+        public static BuildArtifact Capture(string path)
+        {
+            using (FileStream stream = File.OpenRead(path))
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                string hash = BitConverter.ToString(sha256.ComputeHash(stream)).Replace("-", string.Empty);
+                return new BuildArtifact
+                {
+                    Path = path,
+                    Size = stream.Length,
+                    Sha256 = hash.ToLowerInvariant()
+                };
+            }
+        }
     }
 
     [Serializable]

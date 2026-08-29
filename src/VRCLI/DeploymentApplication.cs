@@ -226,6 +226,9 @@ public sealed class DeploymentApplication(
         }
 
         string operationId = Guid.NewGuid().ToString("N");
+        string recoveryDirectory = options.Recovery != null
+            ? Path.GetDirectoryName(options.Recovery.BundlePath)!
+            : Path.Combine(options.ProjectPath, "Library", "VRCLI", "recovery", operationId);
         string resultFile = Path.Combine(Path.GetTempPath(), $"vrcli-result-{operationId}.json");
         string? targetRequestFile = terminalUi == null || Console.IsInputRedirected
             ? null
@@ -249,7 +252,8 @@ public sealed class DeploymentApplication(
                 sessionTokens,
                 project.ContentType!.Value,
                 targetRequestFile,
-                targetResponseFile);
+                targetResponseFile,
+                recoveryDirectory);
             IProcessLineObserver? terminalObserver = terminalUi;
             if (terminalUi != null && targetRequestFile != null && targetResponseFile != null)
             {
@@ -314,6 +318,62 @@ public sealed class DeploymentApplication(
             }
             if (bridgeResult != null)
             {
+                if (bridgeResult.Success && options.Operation == OperationMode.Deploy)
+                {
+                    await ReportAsync(terminalUi, "VERIFY", "Verifying the uploaded platform package with the VRChat server.", true);
+                    try
+                    {
+                        using VrchatApiClient verificationApi = new();
+                        await verificationApi.ResumeSessionAsync(sessionTokens, cancellationToken);
+                        DeploymentVerification verification = await new DeploymentVerifier().VerifyAsync(
+                            verificationApi,
+                            bridgeResult,
+                            authenticatedUser.Id,
+                            options.Platform,
+                            message => Report(terminalUi, "VERIFY", message),
+                            cancellationToken);
+                        bridgeResult = bridgeResult with
+                        {
+                            Success = verification.Success,
+                            ExitCode = verification.Success ? ExitCodes.Success : ExitCodes.UploadFailed,
+                            Stage = verification.Success ? "complete" : "verification",
+                            Message = verification.Success ? bridgeResult.Message : verification.Message,
+                            Verified = verification.Success,
+                            VerificationMessage = verification.Message,
+                            ServerVersion = verification.Content?.Version ?? bridgeResult.ServerVersion
+                        };
+                        await ReportAsync(terminalUi, "VERIFY", verification.Message);
+                        if (verification.Success && !string.IsNullOrWhiteSpace(bridgeResult.Artifact?.RecoveryFile))
+                        {
+                            try
+                            {
+                                RecoveryManifestFile.Complete(bridgeResult.Artifact.RecoveryFile);
+                                bridgeResult = bridgeResult with
+                                {
+                                    Artifact = bridgeResult.Artifact with { RecoveryFile = null }
+                                };
+                                await ReportAsync(terminalUi, "VERIFY", "Removed the verified deployment recovery files.");
+                            }
+                            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+                            {
+                                await ReportAsync(terminalUi, "VERIFY", "Deployment is verified, but recovery cleanup was skipped: " + exception.Message);
+                            }
+                        }
+                    }
+                    catch (Exception exception) when (exception is VrchatApiException or HttpRequestException or TaskCanceledException)
+                    {
+                        bridgeResult = bridgeResult with
+                        {
+                            Success = false,
+                            ExitCode = ExitCodes.NetworkFailed,
+                            Stage = "verification",
+                            Message = "Upload completed, but server verification failed: " + exception.Message,
+                            Verified = false,
+                            VerificationMessage = exception.Message
+                        };
+                    }
+                }
+
                 bool blueprintOutputWritten = false;
                 if (bridgeResult.Success && options.BlueprintOutputPath != null && !string.IsNullOrWhiteSpace(bridgeResult.Blueprint))
                 {
@@ -483,7 +543,8 @@ public sealed class DeploymentApplication(
         VrchatSessionTokens sessionTokens,
         ProjectContentType contentType,
         string? targetRequestFile,
-        string? targetResponseFile)
+        string? targetResponseFile,
+        string recoveryDirectory)
     {
         ProcessStartInfo startInfo = new(unityPath) { WorkingDirectory = options.ProjectPath };
         Add(startInfo, "-batchmode");
@@ -502,6 +563,13 @@ public sealed class DeploymentApplication(
             startInfo.Environment[DeploymentEnvironment.TwoFactorToken] = sessionTokens.TwoFactorToken;
         startInfo.Environment[DeploymentEnvironment.Platform] = options.Platform.ToString();
         startInfo.Environment[DeploymentEnvironment.ResultFile] = resultFile;
+        startInfo.Environment[DeploymentEnvironment.RecoveryDirectory] = recoveryDirectory;
+        if (options.Recovery != null)
+        {
+            startInfo.Environment[DeploymentEnvironment.ResumeBundle] = options.Recovery.BundlePath;
+            if (!string.IsNullOrWhiteSpace(options.Recovery.Signature))
+                startInfo.Environment[DeploymentEnvironment.ResumeSignature] = options.Recovery.Signature;
+        }
         if (!string.IsNullOrWhiteSpace(options.TargetPath))
             startInfo.Environment[DeploymentEnvironment.Target] = options.TargetPath;
         if (!string.IsNullOrWhiteSpace(targetRequestFile))
@@ -576,6 +644,8 @@ public sealed class DeploymentApplication(
 
     private async Task WriteResultAsync(DeploymentResult result)
     {
+        if (string.IsNullOrWhiteSpace(result.VrcliVersion))
+            result = result with { VrcliVersion = Branding.Version };
         LastResult = result;
         await output.WriteLineAsync(JsonSerializer.Serialize(result, ResultJsonOptions));
     }
@@ -612,6 +682,7 @@ VRCLI commands and parameters
   --tag <tag>                   Repeatable metadata tag to add
   --remove-tag <tag>            Repeatable metadata tag to remove; meta only
   --blueprint-output <file>     Save the uploaded wrld_ or avtr_ ID; deploy only
+  --resume <recovery.json>      Retry a preserved upload without rebuilding; deploy only
   --two-factor-code <code>      Current VRChat two-factor code
   --two-factor-method <method>  Code type: totp, emailOtp, or otp
   --interactive-two-factor      Prompt only when VRChat requests two-factor authentication
@@ -643,6 +714,19 @@ public sealed record DeploymentResult(
     IReadOnlyList<string>? CompilerWarnings = null,
     IReadOnlyList<MetadataChange>? Changes = null,
     string? ContentType = null,
-    IReadOnlyList<ContentTarget>? Targets = null);
+    IReadOnlyList<ContentTarget>? Targets = null,
+    string? VrcliVersion = null,
+    string? UnityVersion = null,
+    string? SdkVersion = null,
+    long? DurationMs = null,
+    IReadOnlyList<PhaseTiming>? PhaseTimings = null,
+    BuildArtifact? Artifact = null,
+    int? PreviousVersion = null,
+    int? ServerVersion = null,
+    string? ServerUpdatedAt = null,
+    bool? Verified = null,
+    string? VerificationMessage = null);
 
 public sealed record ContentTarget(string Name, string Selector, string? Blueprint);
+public sealed record PhaseTiming(string Phase, long DurationMs);
+public sealed record BuildArtifact(string Path, long Size, string Sha256, string? RecoveryFile = null);

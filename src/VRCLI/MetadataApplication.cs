@@ -72,7 +72,7 @@ public sealed class MetadataApplication(
             {
                 await ReportAsync(terminalUi, "WORLD", "World metadata is already up to date.", true);
                 if (terminalUi != null) await terminalUi.FinishAsync(true);
-                DeploymentResult unchanged = new(
+                DeploymentResult unchanged = Versioned(new DeploymentResult(
                     true,
                     ExitCodes.Success,
                     current.Id,
@@ -80,7 +80,7 @@ public sealed class MetadataApplication(
                     null,
                     "metadata",
                     "World metadata is already up to date; no server update was needed.",
-                    Changes: []);
+                    Changes: []));
                 await output.WriteLineAsync(JsonSerializer.Serialize(unchanged, ResultJsonOptions));
                 return new MetadataExecutionResult(ExitCodes.Success, unchanged);
             }
@@ -111,7 +111,7 @@ public sealed class MetadataApplication(
                 foreach (MetadataChange change in applied) await logOutput.WriteLineAsync("[VRCLI][META] " + FormatChange(change));
             }
 
-            DeploymentResult success = new(
+            DeploymentResult success = Versioned(new DeploymentResult(
                 true,
                 ExitCodes.Success,
                 updated.Id,
@@ -119,7 +119,11 @@ public sealed class MetadataApplication(
                 null,
                 "metadata",
                 "World metadata updated without starting Unity.",
-                Changes: applied);
+                Changes: applied,
+                PreviousVersion: current.Version,
+                ServerVersion: updated.Version,
+                Verified: true,
+                VerificationMessage: "The metadata update response was verified."));
             await output.WriteLineAsync(JsonSerializer.Serialize(success, ResultJsonOptions));
             return new MetadataExecutionResult(ExitCodes.Success, success);
         }
@@ -174,14 +178,17 @@ public sealed class MetadataApplication(
     public static string FormatChange(MetadataChange change) =>
         $"{change.Field}: {Display(change.Before)}  →  {Display(change.After)}";
 
-    private DeploymentResult Failure(int exitCode, string stage, string message) => new(
+    private DeploymentResult Failure(int exitCode, string stage, string message) => Versioned(new DeploymentResult(
         false,
         exitCode,
         null,
         false,
         null,
         stage,
-        message);
+        message));
+
+    private static DeploymentResult Versioned(DeploymentResult result) =>
+        result with { VrcliVersion = Branding.Version };
 
     private Task ReportAsync(
         TerminalProgressRenderer? terminalUi,
