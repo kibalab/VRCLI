@@ -13,7 +13,14 @@ public sealed record SavedVrchatSession(
     VrchatSessionTokens Tokens,
     DateTimeOffset LastUsed);
 
-public sealed class VrchatSessionStore
+public interface IVrchatSessionStore
+{
+    IReadOnlyList<SavedVrchatSession> List();
+    void Save(SavedVrchatSession session);
+    void Delete(string userId);
+}
+
+public sealed class VrchatSessionStore : IVrchatSessionStore
 {
     private const string TargetPrefix = "VRCLI:VRChatSession:";
     private const uint GenericCredential = 1;
@@ -82,6 +89,15 @@ public sealed class VrchatSessionStore
             if (error != 1168) throw new Win32Exception(error);
         }
     }
+
+    public static IReadOnlyList<SavedVrchatSession> Match(
+        IEnumerable<SavedVrchatSession> sessions,
+        string login) => sessions.Where(session =>
+            string.Equals(session.UserId, login, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(session.DisplayName, login, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(session.LoginHint, login, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(session => session.LastUsed)
+        .ToArray();
 
     private static SavedVrchatSession? Deserialize(NativeCredential credential)
     {

@@ -308,13 +308,6 @@ public sealed class CommandLineParser
         }
 
         string? password = Get(values, "password") ?? Environment.GetEnvironmentVariable(DeploymentEnvironment.Password);
-        bool hasSavedSession = !string.IsNullOrWhiteSpace(
-            Environment.GetEnvironmentVariable(DeploymentEnvironment.AuthToken));
-
-        if (string.IsNullOrEmpty(password) && !hasSavedSession)
-        {
-            return ParseResult.Failure("Set VRCLI_PASSWORD or provide --password <password>.");
-        }
         password ??= string.Empty;
 
         if (!TryParseTimeout(Get(values, "timeout"), out TimeSpan timeout, out string? timeoutError))

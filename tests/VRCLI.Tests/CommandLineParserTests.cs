@@ -5,6 +5,17 @@ namespace WorldDeployment.Tests;
 public sealed class CommandLineParserTests
 {
     [Fact]
+    public void AllowsPasswordlessLoginForSavedSessionResolution()
+    {
+        ParseResult result = new CommandLineParser().Parse(
+            ["deploy", "--login", "KIBA_", "--project", Directory.GetCurrentDirectory(), "--plain"]);
+
+        Assert.Null(result.Error);
+        Assert.Equal(string.Empty, result.Options!.Password);
+        Assert.Equal("KIBA_", result.Options.Username);
+    }
+
+    [Fact]
     public void ParsesMetadataOnlyCommand()
     {
         ParseResult result = new CommandLineParser().Parse(
