@@ -48,9 +48,15 @@ powershell -ExecutionPolicy Bypass -File .\install-vrcli.ps1
 
 - 설치 프로그램: `VRCLI-x.y.z-win-x64-setup.exe`
 - Portable: `VRCLI-x.y.z-win-x64.zip`
-- 카탈로그 등록 후 WinGet: `winget install --id kibalab.VRCLI --exact`
+- Microsoft 카탈로그 승인 대기 중인 WinGet: `winget install --id kibalab.VRCLI --exact`
 
 ### macOS
+
+```bash
+brew install kibalab/tap/vrcli
+```
+
+Homebrew를 사용하지 않는 경우:
 
 ```bash
 curl -fLO https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.sh
@@ -59,7 +65,6 @@ sh install-vrcli.sh
 
 - 설치 프로그램: `VRCLI-x.y.z-osx-arm64.pkg` 또는 `VRCLI-x.y.z-osx-x64.pkg`
 - Portable: 아키텍처에 맞는 `.tar.gz`
-- Homebrew: `brew install kibalab/tap/vrcli`
 
 현재 macOS 패키지는 서명 및 공증되지 않았습니다.
 
