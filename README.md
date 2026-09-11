@@ -42,13 +42,18 @@ Download the latest version from [GitHub Releases](https://github.com/kibalab/VR
 ### Windows
 
 ```powershell
+winget install --id kibalab.VRCLI --exact
+```
+
+Without WinGet:
+
+```powershell
 irm https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile install-vrcli.ps1
 powershell -ExecutionPolicy Bypass -File .\install-vrcli.ps1
 ```
 
 - Setup: `VRCLI-x.y.z-win-x64-setup.exe`
 - Portable: `VRCLI-x.y.z-win-x64.zip`
-- WinGet, pending Microsoft catalog approval: `winget install --id kibalab.VRCLI --exact`
 
 ### macOS
 
