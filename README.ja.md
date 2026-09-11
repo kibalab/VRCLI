@@ -42,13 +42,18 @@ Windows はエンドツーエンドで検証済みです。macOS は Apple Silic
 ### Windows
 
 ```powershell
+winget install --id kibalab.VRCLI --exact
+```
+
+WinGet を使用しない場合:
+
+```powershell
 irm https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile install-vrcli.ps1
 powershell -ExecutionPolicy Bypass -File .\install-vrcli.ps1
 ```
 
 - セットアップ: `VRCLI-x.y.z-win-x64-setup.exe`
 - ポータブル: `VRCLI-x.y.z-win-x64.zip`
-- Microsoft カタログの承認待ちの WinGet: `winget install --id kibalab.VRCLI --exact`
 
 ### macOS
 

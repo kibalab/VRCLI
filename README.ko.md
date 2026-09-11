@@ -42,13 +42,18 @@ Windows는 전체 과정을 검증했습니다. macOS는 Apple Silicon/Intel 빌
 ### Windows
 
 ```powershell
+winget install --id kibalab.VRCLI --exact
+```
+
+WinGet을 사용하지 않는 경우:
+
+```powershell
 irm https://github.com/kibalab/VRCLI/releases/latest/download/install-vrcli.ps1 -OutFile install-vrcli.ps1
 powershell -ExecutionPolicy Bypass -File .\install-vrcli.ps1
 ```
 
 - 설치 프로그램: `VRCLI-x.y.z-win-x64-setup.exe`
 - Portable: `VRCLI-x.y.z-win-x64.zip`
-- Microsoft 카탈로그 승인 대기 중인 WinGet: `winget install --id kibalab.VRCLI --exact`
 
 ### macOS
 
